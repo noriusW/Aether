@@ -5,10 +5,17 @@ const TitleBar = () => {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
-    if (window.electron) {
-      window.electron.on('window-maximized', () => setIsMaximized(true));
-      window.electron.on('window-unmaximized', () => setIsMaximized(false));
-    }
+    if (!window.electron) return;
+    const handleMaximized = () => setIsMaximized(true);
+    const handleUnmaximized = () => setIsMaximized(false);
+
+    window.electron.on('window-maximized', handleMaximized);
+    window.electron.on('window-unmaximized', handleUnmaximized);
+
+    return () => {
+      window.electron.off('window-maximized');
+      window.electron.off('window-unmaximized');
+    };
   }, []);
 
   const send = (channel) => {

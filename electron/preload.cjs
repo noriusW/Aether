@@ -2,7 +2,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
   send: (channel, data) => {
-    const validChannels = ['minimize-window', 'maximize-window', 'close-window', 'resize-window', 'login-success', 'open-external', 'update-presence'];
+    const validChannels = [
+      'minimize-window', 'maximize-window', 'close-window', 'resize-window', 
+      'resize-window-delta', 'login-success', 'open-external', 'update-presence',
+      'update-app-settings', 'logout-request'
+    ];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data);
     }
@@ -20,7 +24,10 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
   off: (channel) => {
-    const validChannels = ['toggle-play-tray', 'next-track-tray', 'prev-track-tray'];
+    const validChannels = [
+      'window-maximized', 'window-unmaximized', 'window-focus-change',
+      'toggle-play-tray', 'next-track-tray', 'prev-track-tray'
+    ];
     if (validChannels.includes(channel)) {
       ipcRenderer.removeAllListeners(channel);
     }

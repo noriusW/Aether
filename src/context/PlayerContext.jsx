@@ -32,6 +32,19 @@ export const PlayerProvider = ({ children }) => {
     if (audioRef.current) audioRef.current.crossOrigin = "anonymous";
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+    };
+  }, []);
+
   // --- AUDIO ENGINE INITIALIZATION ---
   const initAudioEngine = () => {
     if (audioContextRef.current) return;
@@ -128,7 +141,10 @@ export const PlayerProvider = ({ children }) => {
           audioRef.current.volume = isMuted ? 0 : volume;
           await audioRef.current.play();
           setIsPlaying(true);
-        } catch (e) { console.error(e); }
+        } catch (e) {
+          console.error(e);
+          setIsPlaying(false);
+        }
         finally { setIsLoadingStream(false); }
       }
     };
@@ -161,7 +177,7 @@ export const PlayerProvider = ({ children }) => {
       window.removeEventListener('tray-next-track', trayNext);
       window.removeEventListener('tray-prev-track', trayPrev);
     };
-  }, [repeatMode, queue, currentTrack]);
+  }, [repeatMode, queue, currentTrack, isShuffle]);
 
   const playTrack = (t) => { if (currentTrack?.id === t.id) { togglePlay(); return; } setCurrentTrack(t); addToHistory(t); };
   const togglePlay = () => setIsPlaying(p => !p);

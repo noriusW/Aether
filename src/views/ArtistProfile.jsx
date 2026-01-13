@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Play, Pause, ArrowLeft, Users, Music, ListMusic, Info } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
+import { useUserData } from '../context/UserDataContext';
 import { fetchArtistById, fetchArtistTracks, fetchArtistPlaylists } from '../services/soundcloud';
 import Loader from '../components/Loader';
 

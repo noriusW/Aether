@@ -17,6 +17,7 @@ import ContextMenu from './components/ContextMenu';
 import NotificationCenter from './components/NotificationCenter';
 import AudioVisualizer from './components/AudioVisualizer';
 import LyricsOverlay from './components/LyricsOverlay';
+import ResizeBorders from './components/ResizeBorders';
 import { PlayerProvider, usePlayer } from './context/PlayerContext';
 import { UserDataProvider, useUserData } from './context/UserDataContext';
 import { processAetherQuery } from './utils/smartSearch';
@@ -27,13 +28,14 @@ const MainApp = () => {
   const { userProfile, syncSoundCloud, visualSettings, localPlaylists, addToPlaylist, toggleLike, appSettings, t, toasts, showToast, removeFromPlaylist } = useUserData();
   const { playTrack, togglePlay, currentTrack, setQueue } = usePlayer(); 
   const [appState, setAppState] = useState('BOOT');
-  const [isWindowFocused, setIsWindowFocused] = useState(true);
   const [activeTab, setActiveTab] = useState('HOME');
 
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
+
   useEffect(() => {
-    if (window.electron) {
-      window.electron.on('window-focus-change', (focused) => setIsWindowFocused(focused));
-    }
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -146,13 +148,16 @@ const MainApp = () => {
   };
 
   const isSmall = appState === 'BOOT';
+  const SIDEBAR_COLLAPSE_WIDTH = 960;
+  const isCompactSidebar = windowWidth <= SIDEBAR_COLLAPSE_WIDTH;
 
   return (
-    <div className="flex items-center justify-center w-screen h-screen overflow-hidden bg-transparent p-[1px]">
+    <div className="flex items-center justify-center w-screen h-screen overflow-hidden bg-transparent">
+      <ResizeBorders />
       <motion.div
         layout
         initial={{ width: 340, height: 340, borderRadius: 40, opacity: 0 }}
-        animate={{ width: isSmall ? 340 : '100vw', height: isSmall ? 340 : '100vh', borderRadius: isSmall ? 40 : 0, opacity: 1 }}
+        animate={{ width: isSmall ? 340 : '100%', height: isSmall ? 340 : '100%', borderRadius: isSmall ? 40 : 0, opacity: 1 }}
         transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
         className="relative overflow-hidden glass-surface flex flex-col bg-[#050505]"
         style={{
@@ -223,27 +228,52 @@ const MainApp = () => {
           )}</AnimatePresence>
         <AnimatePresence>{(appState === 'DASHBOARD' || (appState === 'AUTH' && userProfile)) && (
             <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex overflow-hidden relative z-10">
-              <aside className="w-[260px] flex flex-col p-4 z-20 transition-all duration-500 border-r border-white/5" style={{ backgroundColor: `rgba(0, 0, 0, ${visualSettings.sidebarOpacity / 100})`, backdropFilter: `blur(${visualSettings.blurAmount}px)`, WebkitBackdropFilter: `blur(${visualSettings.blurAmount}px)` }}>
-                <div className="flex items-center gap-3 px-3 mb-10 mt-4 opacity-80"><Disc size={14} className="text-indigo-500" /><span className="font-bold tracking-tight text-sm uppercase text-white/90">Aether</span></div>
-                <div className="flex-1 space-y-8">
+              <aside className={`flex flex-col z-20 transition-all duration-500 border-r border-white/5 ${isCompactSidebar ? 'w-[60px] px-2 py-4' : 'w-[260px] p-4'}`} style={{ backgroundColor: `rgba(0, 0, 0, ${visualSettings.sidebarOpacity / 100})`, backdropFilter: `blur(${visualSettings.blurAmount}px)`, WebkitBackdropFilter: `blur(${visualSettings.blurAmount}px)` }}>
+                <div className={`flex items-center gap-3 mb-10 mt-4 opacity-80 ${isCompactSidebar ? 'justify-center' : 'px-3'}`}>
+                  <Disc size={14} className="text-indigo-500" />
+                  {!isCompactSidebar && <span className="font-bold tracking-tight text-sm uppercase text-white/90">Aether</span>}
+                </div>
+                <div className={`flex-1 w-full ${isCompactSidebar ? 'space-y-6' : 'space-y-8'}`}>
                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-white/20 px-3 mb-3 tracking-widest uppercase">{t.settings_general}</p>
-                      <SidebarItem icon={<Home size={16} />} label={t.home} active={activeTab === 'HOME' && !selectedPlaylist && !selectedArtist} onClick={() => { setActiveTab('HOME'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
-                      <SidebarItem icon={<LayoutGrid size={16} />} label={t.discover} active={activeTab === 'DISCOVER' && !selectedPlaylist && !selectedArtist} onClick={() => { setActiveTab('DISCOVER'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
-                      <SidebarItem icon={<Radio size={16} />} label={t.radio} active={activeTab === 'RADIO' && !selectedPlaylist && !selectedArtist} onClick={() => { setActiveTab('RADIO'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
+                      {!isCompactSidebar && (
+                        <p className="text-[10px] font-bold text-white/20 px-3 mb-3 tracking-widest uppercase">{t.settings_general}</p>
+                      )}
+                      <SidebarItem compact={isCompactSidebar} icon={<Home size={16} />} label={t.home} active={activeTab === 'HOME' && !selectedPlaylist && !selectedArtist} onClick={() => { setActiveTab('HOME'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
+                      <SidebarItem compact={isCompactSidebar} icon={<LayoutGrid size={16} />} label={t.discover} active={activeTab === 'DISCOVER' && !selectedPlaylist && !selectedArtist} onClick={() => { setActiveTab('DISCOVER'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
+                      <SidebarItem compact={isCompactSidebar} icon={<Radio size={16} />} label={t.radio} active={activeTab === 'RADIO' && !selectedPlaylist && !selectedArtist} onClick={() => { setActiveTab('RADIO'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
                    </div>
                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-white/20 px-3 mb-3 tracking-widest uppercase">{t.playlists}</p>
-                      <SidebarItem icon={<Heart size={16} />} label={t.likes} active={activeTab === 'LIKED'} onClick={() => { setActiveTab('LIKED'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
-                      <SidebarItem icon={<ListMusic size={16} />} label={t.playlists} active={activeTab === 'PLAYLISTS'} onClick={() => { setActiveTab('PLAYLISTS'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
-                      <SidebarItem icon={<Clock size={16} />} label={t.history} active={activeTab === 'HISTORY'} onClick={() => { setActiveTab('HISTORY'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
+                      {!isCompactSidebar && (
+                        <p className="text-[10px] font-bold text-white/20 px-3 mb-3 tracking-widest uppercase">{t.playlists}</p>
+                      )}
+                      <SidebarItem compact={isCompactSidebar} icon={<Heart size={16} />} label={t.likes} active={activeTab === 'LIKED'} onClick={() => { setActiveTab('LIKED'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
+                      <SidebarItem compact={isCompactSidebar} icon={<ListMusic size={16} />} label={t.playlists} active={activeTab === 'PLAYLISTS'} onClick={() => { setActiveTab('PLAYLISTS'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
+                      <SidebarItem compact={isCompactSidebar} icon={<Clock size={16} />} label={t.history} active={activeTab === 'HISTORY'} onClick={() => { setActiveTab('HISTORY'); setSelectedPlaylist(null); setSelectedArtist(null); }} />
                    </div>
                 </div>
-                <div className="mt-auto flex flex-col gap-2">
-                  <div onClick={() => setActiveTab('SETTINGS')} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all ${activeTab === 'SETTINGS' ? 'bg-white/[0.08] text-indigo-400' : 'text-white/30 hover:text-white'}`}><SettingsIcon size={16} /><span className="text-xs font-medium">{t.settings}</span></div>
-                  <div onClick={() => setActiveTab('PROFILE')} className="p-3 rounded-xl glow-border flex items-center gap-3 hover:bg-white/[0.04] cursor-pointer group bg-black/40">
-                    <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center overflow-hidden">{userProfile?.avatar_url ? <img src={userProfile.avatar_url} className="w-full h-full object-cover" /> : <User size={12} className="text-white/50" />}</div>
-                    <div className="flex flex-col min-w-0"><span className="text-xs font-medium text-white/80 truncate">{userProfile?.username || 'Guest'}</span><span className="text-[10px] text-white/30 truncate uppercase tracking-tighter font-bold">{userProfile ? t.connected : t.local}</span></div>
+                <div className="mt-auto flex flex-col gap-2 w-full">
+                  <div
+                    onClick={() => setActiveTab('SETTINGS')}
+                    title={isCompactSidebar ? t.settings : undefined}
+                    className={`flex items-center rounded-xl cursor-pointer transition-all ${isCompactSidebar ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'} ${activeTab === 'SETTINGS' ? 'bg-white/[0.08] text-indigo-400' : 'text-white/30 hover:text-white'}`}
+                  >
+                    <SettingsIcon size={16} />
+                    {!isCompactSidebar && <span className="text-xs font-medium">{t.settings}</span>}
+                  </div>
+                  <div
+                    onClick={() => setActiveTab('PROFILE')}
+                    title={isCompactSidebar ? (userProfile?.username || 'Guest') : undefined}
+                    className={`rounded-xl glow-border flex items-center hover:bg-white/[0.04] cursor-pointer group bg-black/40 ${isCompactSidebar ? 'justify-center p-2' : 'gap-3 p-3'}`}
+                  >
+                    <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center overflow-hidden">
+                      {userProfile?.avatar_url ? <img src={userProfile.avatar_url} className="w-full h-full object-cover" /> : <User size={12} className="text-white/50" />}
+                    </div>
+                    {!isCompactSidebar && (
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs font-medium text-white/80 truncate">{userProfile?.username || 'Guest'}</span>
+                        <span className="text-[10px] text-white/30 truncate uppercase tracking-tighter font-bold">{userProfile ? t.connected : t.local}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </aside>
@@ -346,10 +376,14 @@ const PlayerBar = ({ onOpenArtist, onToggleLyrics, isLyricsOpen }) => {
   );
 };
 
-const SidebarItem = ({ icon, label, active, onClick }) => (
-  <div onClick={onClick} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all group ${active ? 'bg-white/[0.08] text-white shadow-inner' : 'text-white/40 hover:text-white hover:bg-white/[0.03]'}`}>
+const SidebarItem = ({ icon, label, active, onClick, compact = false }) => (
+  <div
+    onClick={onClick}
+    title={compact ? label : undefined}
+    className={`flex items-center w-full rounded-xl cursor-pointer transition-all group ${compact ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'} ${active ? 'bg-white/[0.08] text-white shadow-inner' : 'text-white/40 hover:text-white hover:bg-white/[0.03]'}`}
+  >
     <div className={`${active ? 'text-indigo-400' : 'group-hover:text-white/90'} transition-colors`}>{icon}</div>
-    <span className="text-xs font-medium tracking-wide transition-all group-hover:translate-x-0.5">{label}</span>
+    {!compact && <span className="text-xs font-medium tracking-wide transition-all group-hover:translate-x-0.5">{label}</span>}
   </div>
 );
 

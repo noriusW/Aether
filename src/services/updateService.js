@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const GITHUB_REPO = "noriusW/Aether"; 
-const CURRENT_VERSION = "1.0.0-beta.1"; 
+const CURRENT_VERSION = "1.0.1-beta"; 
 
 export const checkUpdates = async () => {
   try {
@@ -28,12 +28,24 @@ export const checkUpdates = async () => {
   }
 };
 
+const normalizeVersion = (version) => {
+  const cleaned = (version || '').toString().trim().replace(/^v/i, '');
+  const [core, pre] = cleaned.split('-');
+  const parts = core.split('.').map((part) => {
+    const n = parseInt(part, 10);
+    return Number.isNaN(n) ? 0 : n;
+  });
+  while (parts.length < 3) parts.push(0);
+  return { parts: parts.slice(0, 3), isPrerelease: Boolean(pre) };
+};
+
 const isNewerVersion = (current, latest) => {
-  const c = current.split('.').map(Number);
-  const l = latest.split('.').map(Number);
+  const c = normalizeVersion(current);
+  const l = normalizeVersion(latest);
   for (let i = 0; i < 3; i++) {
-    if (l[i] > c[i]) return true;
-    if (l[i] < c[i]) return false;
+    if (l.parts[i] > c.parts[i]) return true;
+    if (l.parts[i] < c.parts[i]) return false;
   }
+  if (c.isPrerelease && !l.isPrerelease) return true;
   return false;
 };

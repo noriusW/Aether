@@ -9,11 +9,14 @@ let lastTrack = null;
 let isConnecting = false;
 const clientId = '1460554881508184074'; 
 
+
+const MIN_WINDOW_WIDTH = 960;
+const MIN_WINDOW_HEIGHT = 420;
 let appSettings = {
   closeToTray: true,
   showTrayIcon: true,
   autoStart: false,
-  discordRPC: false 
+  discordRPC: true 
 };
 
 ipcMain.on('minimize-window', () => mainWindow.minimize());
@@ -25,6 +28,35 @@ ipcMain.on('resize-window', (e, { width, height, center }) => {
     if (mainWindow) mainWindow.setSize(Math.floor(sw * 0.9), Math.floor(sh * 0.9));
   } else if (mainWindow) mainWindow.setSize(width, height);
   if (center && mainWindow) mainWindow.center();
+});
+
+ipcMain.on('resize-window-delta', (e, { dx = 0, dy = 0, direction = '' }) => {
+  if (!mainWindow || mainWindow.isMaximized()) return;
+  const bounds = mainWindow.getBounds();
+  let { x, y, width, height } = bounds;
+
+  if (direction.includes('e')) {
+    width = Math.max(MIN_WINDOW_WIDTH, width + dx);
+  }
+  if (direction.includes('s')) {
+    height = Math.max(MIN_WINDOW_HEIGHT, height + dy);
+  }
+  if (direction.includes('w')) {
+    const newWidth = Math.max(MIN_WINDOW_WIDTH, width - dx);
+    const appliedDx = width - newWidth;
+    x += appliedDx;
+    width = newWidth;
+  }
+  if (direction.includes('n')) {
+    const newHeight = Math.max(MIN_WINDOW_HEIGHT, height - dy);
+    const appliedDy = height - newHeight;
+    y += appliedDy;
+    height = newHeight;
+  }
+
+  if (width !== bounds.width || height !== bounds.height || x !== bounds.x || y !== bounds.y) {
+    mainWindow.setBounds({ x, y, width, height });
+  }
 });
 
 ipcMain.on('update-presence', (e, track) => {
@@ -170,10 +202,9 @@ function registerShortcuts() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 340, height: 340, minWidth: 340, minHeight: 340,
+    width: MIN_WINDOW_WIDTH, height: MIN_WINDOW_HEIGHT, minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT,
     frame: false, transparent: true, title: 'Aether',
     backgroundColor: '#00000000', resizable: true, 
-    thickFrame: true, // Включает стандартные границы окна для изменения размера
     icon: path.join(__dirname, '../icon.png'),
     webPreferences: { 
       nodeIntegration: false, 

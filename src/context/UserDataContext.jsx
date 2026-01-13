@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { get, set, del } from 'idb-keyval';
 import { fetchUserProfile, fetchUserLikes, fetchUserPlaylists } from '../services/soundcloud';
 
@@ -17,11 +17,23 @@ export const UserDataProvider = ({ children }) => {
   const [homeRecommendations, setHomeRecommendations] = useState([]);
   const [neuralFeedback, setNeuralFeedback] = useState(null);
   const [toasts, setToasts] = useState([]);
+  const toastTimeoutsRef = useRef(new Map());
+
+  useEffect(() => {
+    return () => {
+      toastTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+      toastTimeoutsRef.current.clear();
+    };
+  }, []);
 
   const showToast = (message) => {
-    const id = Date.now();
+    const id = Date.now() + Math.random();
     setToasts(p => [...p, { id, message }]);
-    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3000);
+    const timeoutId = setTimeout(() => {
+      setToasts(p => p.filter(t => t.id !== id));
+      toastTimeoutsRef.current.delete(id);
+    }, 3000);
+    toastTimeoutsRef.current.set(id, timeoutId);
   };
 
   const [visualSettings, setVisualSettings] = useState({
@@ -242,12 +254,17 @@ export const UserDataProvider = ({ children }) => {
       if (hist) setHistory(hist);
       if (playlists) setLocalPlaylists(playlists);
       if (vSets) setVisualSettings(vSets);
+
+      const resolvedAppSettings = aSets || appSettings;
       if (aSets) {
         setAppSettings(aSets);
-        if (window.electron) window.electron.send('update-app-settings', aSets);
+      } else {
+        set('appSettings', resolvedAppSettings);
       }
+      if (window.electron) window.electron.send('update-app-settings', resolvedAppSettings);
+
       if (auSets) setAudioSettings(auSets);
-      if (tCache && aSets?.persistCache) setTrendingCache(tCache);
+      if (tCache && resolvedAppSettings.persistCache) setTrendingCache(tCache);
       if (dMixes) setDailyMixes(dMixes);
       if (dMixesTime) setDailyMixesTimestamp(dMixesTime);
       
@@ -274,15 +291,20 @@ export const UserDataProvider = ({ children }) => {
 
   const syncSoundCloud = async () => {
     setIsSyncing(true);
-    const profile = await fetchUserProfile();
-    if (profile) {
-      setUserProfile(profile);
-      const [likes, playlists] = await Promise.all([fetchUserLikes(), fetchUserPlaylists()]);
-      if (likes.length > 0) setLikedSongs(likes);
-      setUserPlaylists(playlists);
-      showToast(t.auth_sync + " Complete");
+    try {
+      const profile = await fetchUserProfile();
+      if (profile) {
+        setUserProfile(profile);
+        const [likes, playlists] = await Promise.all([fetchUserLikes(), fetchUserPlaylists()]);
+        if (Array.isArray(likes) && likes.length > 0) setLikedSongs(likes);
+        if (Array.isArray(playlists)) setUserPlaylists(playlists);
+        showToast(t.auth_sync + " Complete");
+      }
+    } catch (e) {
+      console.warn('SoundCloud sync failed:', e);
+    } finally {
+      setIsSyncing(false);
     }
-    setIsSyncing(false);
   };
 
   const logout = () => {
