@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { get, set } from 'idb-keyval';
+import { cacheGet, cacheSet } from '../utils/offlineCache';
 
 const API_URL = 'https://api-v2.soundcloud.com';
 let activeClientId = localStorage.getItem('sc_client_id') || null;
@@ -17,6 +18,12 @@ const getClientId = async () => {
   } catch (e) { console.warn(e); }
   return 'a281614d7f34dc30b665dfcaa3ed7505';
 };
+
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+
+const normalizeQuery = (query) => (query || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+
+const dedupeById = (items) => Array.from(new Map(items.filter(Boolean).map((t) => [t.id, t])).values());
 
 export const setUserCredentials = (clientId, token) => {
   activeClientId = clientId;
@@ -61,6 +68,9 @@ export const fetchPlaylistById = async (id) => {
     const found = locals.find(p => p.id === Number(id));
     if (found) return found;
   }
+  const cacheKey = `playlist:${id}`;
+  const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
+  if (cached) return cached;
   try {
     const cid = await getClientId();
     const res = await axios.get(`${API_URL}/playlists/${id}`, {
@@ -78,43 +88,85 @@ export const fetchPlaylistById = async (id) => {
       }
       tracks = tracks.map(t => t.title ? t : (resolved.find(rt => rt.id === t.id) || t));
     }
-    return { ...formatPlaylist(res.data), tracks: tracks.map(formatTrack) };
-  } catch (e) { return null; }
+    const payload = { ...formatPlaylist(res.data), tracks: tracks.map(formatTrack) };
+    await cacheSet(cacheKey, payload, { ttlMs: 1000 * 60 * 60 });
+    return payload;
+  } catch (e) {
+    const fallback = await cacheGet(cacheKey, { allowStale: true });
+    return fallback || null;
+  }
 };
 
 export const fetchArtistById = async (id) => {
+  const cacheKey = `artist:${id}`;
+  const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
+  if (cached) return cached;
   try {
     const res = await axios.get(`${API_URL}/users/${id}`, { params: { client_id: await getClientId() }, headers: getAuthHeaders() });
+    await cacheSet(cacheKey, res.data, { ttlMs: 1000 * 60 * 60 * 12 });
     return res.data;
-  } catch (e) { return null; }
+  } catch (e) {
+    const fallback = await cacheGet(cacheKey, { allowStale: true });
+    return fallback || null;
+  }
 };
 
 export const fetchArtistTracks = async (id) => {
+  const cacheKey = `artist-tracks:${id}`;
+  const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
+  if (cached) return cached;
   try {
     const res = await axios.get(`${API_URL}/users/${id}/tracks`, { params: { client_id: await getClientId(), limit: 50 }, headers: getAuthHeaders() });
-    return (res.data.collection || []).map(formatTrack);
-  } catch (e) { return []; }
+    const tracks = (res.data.collection || []).map(formatTrack);
+    await cacheSet(cacheKey, tracks, { ttlMs: 1000 * 60 * 30 });
+    return tracks;
+  } catch (e) {
+    const fallback = await cacheGet(cacheKey, { allowStale: true });
+    return fallback || [];
+  }
 };
 
 export const fetchArtistPlaylists = async (id) => {
+  const cacheKey = `artist-playlists:${id}`;
+  const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
+  if (cached) return cached;
   try {
     const res = await axios.get(`${API_URL}/users/${id}/playlists`, { params: { client_id: await getClientId(), limit: 20 }, headers: getAuthHeaders() });
-    return (res.data.collection || []).map(formatPlaylist);
-  } catch (e) { return []; }
+    const playlists = (res.data.collection || []).map(formatPlaylist);
+    await cacheSet(cacheKey, playlists, { ttlMs: 1000 * 60 * 30 });
+    return playlists;
+  } catch (e) {
+    const fallback = await cacheGet(cacheKey, { allowStale: true });
+    return fallback || [];
+  }
 };
 
 export const fetchRelatedTracks = async (id) => {
+  const cacheKey = `related:${id}`;
+  const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
+  if (cached) return cached;
   try {
     const res = await axios.get(`${API_URL}/tracks/${id}/related`, { params: { client_id: await getClientId(), limit: 20 }, headers: getAuthHeaders() });
-    return (res.data.collection || []).map(formatTrack);
-  } catch (e) { return []; }
+    const tracks = dedupeById((res.data.collection || []).map(formatTrack));
+    await cacheSet(cacheKey, tracks, { ttlMs: 1000 * 60 * 60 * 6 });
+    return tracks;
+  } catch (e) {
+    const fallback = await cacheGet(cacheKey, { allowStale: true });
+    return fallback || [];
+  }
 };
 
 export const searchTracks = async (query, type = 'tracks') => {
+  const normalized = normalizeQuery(query);
+  if (!normalized) return [];
+  const cacheKey = `search:${type}:${normalized}`;
+  const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
+  if (cached) return cached;
+
   try {
     const cid = await getClientId();
     const ep = type === 'tracks' ? 'tracks' : type === 'playlists' ? 'playlists' : 'users';
-    const res = await axios.get(`${API_URL}/search/${ep}`, { params: { q: query, client_id: cid, limit: 40 }, headers: getAuthHeaders() });
+    const res = await axios.get(`${API_URL}/search/${ep}`, { params: { q: normalized, client_id: cid, limit: 40 }, headers: getAuthHeaders() });
     const results = (res.data.collection || []).map(item => {
       if (type === 'tracks') return formatTrack(item);
       if (type === 'playlists') return formatPlaylist(item);
@@ -122,22 +174,44 @@ export const searchTracks = async (query, type = 'tracks') => {
     });
 
     if (type === 'tracks') {
-      const aiKeywords = ['ai generated', 'suno', 'udio', 'ai cover', 'ai song', 'generated by ai', 'ai remix'];
-      return results.filter(t => {
+      const autoGeneratedKeywords = ['ai generated', 'suno', 'udio', 'ai cover', 'ai song', 'generated by ai', 'ai remix'];
+      const filtered = results.filter(t => {
         const searchStr = `${t.title} ${t.artist}`.toLowerCase();
-        return !aiKeywords.some(key => searchStr.includes(key));
+        return !autoGeneratedKeywords.some(key => searchStr.includes(key));
       });
+      const unique = dedupeById(filtered);
+      await cacheSet(cacheKey, unique, { ttlMs: 1000 * 60 * 15 });
+      return unique;
     }
-    return results;
-  } catch (e) { return []; }
+
+    const unique = dedupeById(results);
+    await cacheSet(cacheKey, unique, { ttlMs: 1000 * 60 * 15 });
+    return unique;
+  } catch (e) {
+    const fallback = await cacheGet(cacheKey, { allowStale: true });
+    return fallback || [];
+  }
 };
 
 export const getStreamUrl = async (t) => {
+  const cacheKey = t?.id ? `stream:${t.id}` : null;
+  if (cacheKey) {
+    const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
+    if (cached) return cached;
+  }
   try {
     if (!t.mediaUrl) return t.streamUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
     const res = await axios.get(t.mediaUrl, { params: { client_id: await getClientId() }, headers: getAuthHeaders() });
-    return res.data?.url || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-  } catch (e) { return 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'; }
+    const url = res.data?.url || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+    if (cacheKey) await cacheSet(cacheKey, url, { ttlMs: 1000 * 60 * 5 });
+    return url;
+  } catch (e) {
+    if (cacheKey) {
+      const fallback = await cacheGet(cacheKey, { allowStale: true });
+      if (fallback) return fallback;
+    }
+    return 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+  }
 };
 
 export const fetchLyrics = async (artist, title) => {

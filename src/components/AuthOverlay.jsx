@@ -35,7 +35,7 @@ const AuthOverlay = ({ onLogin, visible }) => {
 
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Aether</h1>
           <p className="text-white/40 text-sm mb-8 text-center max-w-[240px]">
-            The intelligent sonic interface for your digital workspace.
+            A clean SoundCloud player focused on speed and discovery.
           </p>
 
           <button
@@ -60,7 +60,7 @@ const AuthOverlay = ({ onLogin, visible }) => {
           </div>
 
           <div className="mt-6 text-xs text-white/30 font-medium">
-             v1.0.0-beta.1 <span className="mx-2">┬г</span> Beta Release
+             v1.1.0 <span className="mx-2">-</span> Release
           </div>
         </div>
       </div>
@@ -69,3 +69,4 @@ const AuthOverlay = ({ onLogin, visible }) => {
 };
 
 export default AuthOverlay;
+

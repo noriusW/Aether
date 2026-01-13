@@ -7,16 +7,35 @@ let tray;
 let rpc;
 let lastTrack = null;
 let isConnecting = false;
+let rpcReady = false;
+let rpcDisabledByError = false;
+let rpcErrorCount = 0;
+let rpcReconnectTimer = null;
+let presenceTimer = null;
+let pendingPresence = null;
+let presenceHeartbeat = null;
+let rpcShutdownTimer = null;
+let rpcStopping = false;
 const clientId = '1460554881508184074'; 
 
 
 const MIN_WINDOW_WIDTH = 960;
 const MIN_WINDOW_HEIGHT = 420;
+const RPC_RETRY_LIMIT = 3;
+const RPC_RETRY_DELAY_MS = 10000;
+const RPC_PRESENCE_DEBOUNCE_MS = 500;
+const RPC_PRESENCE_HEARTBEAT_MS = 60000;
 let appSettings = {
   closeToTray: true,
   showTrayIcon: true,
   autoStart: false,
   discordRPC: true 
+};
+
+const sendRpcStatus = (payload) => {
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('rpc-status', payload);
+  }
 };
 
 ipcMain.on('minimize-window', () => mainWindow.minimize());
@@ -61,29 +80,22 @@ ipcMain.on('resize-window-delta', (e, { dx = 0, dy = 0, direction = '' }) => {
 
 ipcMain.on('update-presence', (e, track) => {
   lastTrack = track;
-  if (rpc) updatePresence(track);
+  queuePresence(track);
 });
 
 ipcMain.handle('get-soundcloud-key', async () => await fetchSoundCloudKey());
 ipcMain.handle('open-external', async (e, url) => shell.openExternal(url));
 
 ipcMain.on('update-app-settings', (e, s) => {
-  const needsReconnect = s.discordRPC === true && (!rpc);
+  const wasDiscordRPCEnabled = appSettings.discordRPC;
   appSettings = { ...appSettings, ...s };
   createTray();
   
   if (appSettings.discordRPC) {
-    if (needsReconnect) {
-      initRPC();
-    }
+    if (!wasDiscordRPCEnabled) rpcDisabledByError = false;
+    if (!rpc && !isConnecting && !rpcDisabledByError) initRPC();
   } else {
-    if (rpc) {
-      try {
-        rpc.destroy();
-      } catch (err) {}
-      rpc = null;
-    }
-    isConnecting = false;
+    stopRPC();
   }
 
   if (app.isPackaged) {
@@ -94,51 +106,175 @@ ipcMain.on('update-app-settings', (e, s) => {
   }
 });
 
-async function initRPC(retries = 5) {
-  if (!appSettings.discordRPC) return;
+async function initRPC() {
+  if (!appSettings.discordRPC || isConnecting || rpcDisabledByError) return;
+  rpcStopping = false;
+  isConnecting = true;
+  rpcReady = false;
   
   if (rpc) {
-    try { rpc.destroy(); } catch(e) {}
+    try {
+      if (typeof rpc.removeAllListeners === 'function') rpc.removeAllListeners();
+      rpc.destroy();
+    } catch(e) {}
     rpc = null;
   }
 
   rpc = new DiscordRPCClient({ clientId, transport: 'ipc' });
+  const rpcClient = rpc;
+  const isStale = () => rpc !== rpcClient;
+  if (typeof rpc.setAutoReconnect === 'function') {
+    rpc.setAutoReconnect(false);
+  }
   
   rpc.on('ready', () => {
+    if (isStale()) return;
     console.log('Discord RPC Ready');
-    if (lastTrack) updatePresence(lastTrack);
-    else updatePresence(null);
+    sendRpcStatus({ code: 'ready' });
+    isConnecting = false;
+    rpcReady = true;
+    rpcErrorCount = 0;
+    startPresenceHeartbeat();
+    queuePresence(lastTrack || null);
   });
 
   rpc.on('disconnected', () => {
+    if (isStale()) return;
     rpc = null;
+    isConnecting = false;
+    rpcReady = false;
+    if (!rpcStopping) sendRpcStatus({ code: 'reconnecting' });
+    if (!rpcStopping) handleRpcError();
+    rpcStopping = false;
+  });
+
+  rpc.on('error', (err) => {
+    if (isStale()) return;
+    console.error('Discord RPC Error', err);
+    rpc = null;
+    isConnecting = false;
+    rpcReady = false;
+    if (!rpcStopping) sendRpcStatus({ code: 'error', message: err?.message });
+    if (!rpcStopping) handleRpcError();
+    rpcStopping = false;
   });
 
   try {
     await rpc.connect();
   } catch (e) {
+    if (isStale()) return;
     console.error('Discord RPC Connection Error');
     rpc = null;
-    if (retries > 0 && appSettings.discordRPC) {
-      setTimeout(() => initRPC(retries - 1), 10000);
-    }
+    isConnecting = false;
+    rpcReady = false;
+    if (!rpcStopping) sendRpcStatus({ code: 'error', message: 'Connection failed' });
+    if (!rpcStopping) handleRpcError();
+    rpcStopping = false;
   }
 }
 
+function handleRpcError() {
+  if (rpcStopping) return;
+  rpcErrorCount += 1;
+  if (presenceTimer) {
+    clearTimeout(presenceTimer);
+    presenceTimer = null;
+  }
+  if (presenceHeartbeat) {
+    clearInterval(presenceHeartbeat);
+    presenceHeartbeat = null;
+  }
+  if (rpcErrorCount >= RPC_RETRY_LIMIT) {
+    rpcDisabledByError = true;
+    console.warn('Discord RPC disabled after repeated errors.');
+    sendRpcStatus({ code: 'disabled', message: 'Disabled after repeated errors.' });
+    return;
+  }
+  if (!appSettings.discordRPC || rpcDisabledByError) return;
+  if (rpcReconnectTimer) clearTimeout(rpcReconnectTimer);
+  rpcReconnectTimer = setTimeout(() => initRPC(), RPC_RETRY_DELAY_MS);
+}
+
+function stopRPC() {
+  rpcStopping = true;
+  sendRpcStatus({ code: 'stopped' });
+  if (rpcReconnectTimer) {
+    clearTimeout(rpcReconnectTimer);
+    rpcReconnectTimer = null;
+  }
+  if (presenceTimer) {
+    clearTimeout(presenceTimer);
+    presenceTimer = null;
+  }
+  if (presenceHeartbeat) {
+    clearInterval(presenceHeartbeat);
+    presenceHeartbeat = null;
+  }
+  if (rpcShutdownTimer) {
+    clearTimeout(rpcShutdownTimer);
+    rpcShutdownTimer = null;
+  }
+  pendingPresence = null;
+  const rpcToClose = rpc;
+  const wasReady = rpcReady;
+  rpc = null;
+  if (rpcToClose) {
+    try {
+      if (typeof rpcToClose.removeAllListeners === 'function') rpcToClose.removeAllListeners();
+      if (typeof rpcToClose.setAutoReconnect === 'function') rpcToClose.setAutoReconnect(false);
+      if (wasReady && typeof rpcToClose.clearActivity === 'function') rpcToClose.clearActivity();
+    } catch (err) {}
+    rpcShutdownTimer = setTimeout(() => {
+      try {
+        if (rpcToClose && typeof rpcToClose.disconnect === 'function') rpcToClose.disconnect();
+        if (rpcToClose && typeof rpcToClose.destroy === 'function') rpcToClose.destroy();
+      } catch (err) {}
+      rpcShutdownTimer = null;
+      rpcStopping = false;
+    }, 400);
+  } else {
+    rpcStopping = false;
+  }
+  isConnecting = false;
+  rpcReady = false;
+  rpcDisabledByError = false;
+  rpcErrorCount = 0;
+}
+
+function startPresenceHeartbeat() {
+  if (presenceHeartbeat) clearInterval(presenceHeartbeat);
+  presenceHeartbeat = setInterval(() => {
+    if (!rpcReady || rpcDisabledByError) return;
+    updatePresence(pendingPresence || lastTrack || null);
+  }, RPC_PRESENCE_HEARTBEAT_MS);
+}
+
+function queuePresence(track) {
+  pendingPresence = track;
+  if (!rpcReady || rpcDisabledByError) return;
+  if (presenceTimer) clearTimeout(presenceTimer);
+  presenceTimer = setTimeout(() => {
+    presenceTimer = null;
+    updatePresence(pendingPresence);
+  }, RPC_PRESENCE_DEBOUNCE_MS);
+}
+
 async function updatePresence(track) {
-  if (!appSettings.discordRPC || !rpc) return;
+  if (!appSettings.discordRPC || !rpc || !rpcReady || rpcDisabledByError) return;
   try {
+    const title = track?.title ? String(track.title).slice(0, 120) : 'Exploring Frequencies';
+    const artist = track?.artist ? String(track.artist).slice(0, 120) : 'Idle';
     const activity = {
-      details: track ? `Listening to ${track.title.slice(0, 120)}` : 'Exploring Frequencies',
-      state: track ? `by ${track.artist.slice(0, 120)}` : 'Idle',
+      details: track ? `Listening to ${title}` : title,
+      state: track ? `by ${artist}` : artist,
       largeImageKey: 'aether_logo',
       largeImageText: 'Aether Audio',
       instance: false
     };
 
     if (track) {
-      activity.startTimestamp = new Date();
-      if (track.permalink && track.permalink.startsWith('http')) {
+      activity.startTimestamp = Math.floor(Date.now() / 1000);
+      if (typeof track.permalink === 'string' && track.permalink.startsWith('http')) {
         activity.buttons = [{ label: 'Listen on SoundCloud', url: track.permalink }];
       }
     }
@@ -147,6 +283,8 @@ async function updatePresence(track) {
   } catch (e) {
     // If setting activity fails, don't crash, just log
     console.error('RPC Presence Update Failed');
+    sendRpcStatus({ code: 'error', message: 'Presence update failed.' });
+    handleRpcError();
   }
 }
 

@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
   on: (channel, func) => {
-    const validChannels = ['window-maximized', 'window-unmaximized', 'toggle-play-tray', 'next-track-tray', 'prev-track-tray', 'window-focus-change'];
+    const validChannels = ['window-maximized', 'window-unmaximized', 'toggle-play-tray', 'next-track-tray', 'prev-track-tray', 'window-focus-change', 'rpc-status'];
     if (validChannels.includes(channel)) {
       ipcRenderer.on(channel, (event, ...args) => func(...args));
     }
@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld('electron', {
   off: (channel) => {
     const validChannels = [
       'window-maximized', 'window-unmaximized', 'window-focus-change',
-      'toggle-play-tray', 'next-track-tray', 'prev-track-tray'
+      'toggle-play-tray', 'next-track-tray', 'prev-track-tray', 'rpc-status'
     ];
     if (validChannels.includes(channel)) {
       ipcRenderer.removeAllListeners(channel);

@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { get, set, del } from 'idb-keyval';
 import { fetchUserProfile, fetchUserLikes, fetchUserPlaylists } from '../services/soundcloud';
+import { clearOfflineCache, getCacheStats } from '../utils/offlineCache';
 
 const UserDataContext = createContext();
 export const useUserData = () => useContext(UserDataContext);
@@ -15,9 +16,11 @@ export const UserDataProvider = ({ children }) => {
   const [dailyMixes, setDailyMixes] = useState(null);
   const [dailyMixesTimestamp, setDailyMixesTimestamp] = useState(null);
   const [homeRecommendations, setHomeRecommendations] = useState([]);
-  const [neuralFeedback, setNeuralFeedback] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [cacheStats, setCacheStats] = useState({ items: 0, bytes: 0 });
   const [toasts, setToasts] = useState([]);
   const toastTimeoutsRef = useRef(new Map());
+  const MAX_NOTIFICATIONS = 60;
 
   useEffect(() => {
     return () => {
@@ -26,7 +29,7 @@ export const UserDataProvider = ({ children }) => {
     };
   }, []);
 
-  const showToast = (message) => {
+  const showToast = useCallback((message) => {
     const id = Date.now() + Math.random();
     setToasts(p => [...p, { id, message }]);
     const timeoutId = setTimeout(() => {
@@ -34,7 +37,45 @@ export const UserDataProvider = ({ children }) => {
       toastTimeoutsRef.current.delete(id);
     }, 3000);
     toastTimeoutsRef.current.set(id, timeoutId);
-  };
+  }, []);
+
+  const refreshCacheStats = useCallback(async () => {
+    const stats = await getCacheStats();
+    setCacheStats(stats);
+  }, []);
+
+  const addNotification = useCallback((entry) => {
+    const now = Date.now();
+    const base = {
+      id: now + Math.random(),
+      ts: now,
+      read: false,
+      level: 'info',
+      type: 'system',
+      ...entry
+    };
+
+    setNotifications((prev) => {
+      const deduped = base.key ? prev.filter((n) => n.key !== base.key) : prev;
+      const next = [base, ...deduped].slice(0, MAX_NOTIFICATIONS);
+      set('notifications', next);
+      return next;
+    });
+  }, [MAX_NOTIFICATIONS]);
+
+  const markNotificationsRead = useCallback(() => {
+    setNotifications((prev) => {
+      if (!prev.some((n) => !n.read)) return prev;
+      const next = prev.map((n) => (n.read ? n : { ...n, read: true }));
+      set('notifications', next);
+      return next;
+    });
+  }, []);
+
+  const clearNotifications = useCallback(async () => {
+    setNotifications([]);
+    await del('notifications');
+  }, []);
 
   const [visualSettings, setVisualSettings] = useState({
     glassOpacity: 85,
@@ -68,10 +109,10 @@ export const UserDataProvider = ({ children }) => {
       profile: "Profile",
       connected: "Connected",
       local: "Local",
-      search_placeholder: "Search Aether...",
-      neural_vibe: "Neural Mood Wave",
-      neural_vibe_desc: "Adjust the neural vibe slider to calibrate the recommendation engine to your current frequency.",
-      neural_feature: "Neural Feature",
+      search_placeholder: "Search music...",
+      neural_vibe: "Mood Wave",
+      neural_vibe_desc: "Tune the slider to shape the radio mix for your mood.",
+      neural_feature: "Mood Control",
       sensitivity: "Sensitivity",
       vibe_deep: "Deep",
       vibe_chill: "Chill",
@@ -81,7 +122,7 @@ export const UserDataProvider = ({ children }) => {
       ignite_wave: "Ignite Wave",
       live_now: "Live Now",
       on_air: "On Air",
-      daily_mixes: "Smart Daily Mixes",
+      daily_mixes: "Daily Mixes",
       daily_collection: "Daily Collection",
       mix_remix: "Remix of the Day",
       mix_discovery: "Sonic Discovery",
@@ -89,17 +130,35 @@ export const UserDataProvider = ({ children }) => {
       mix_energy: "High Energy",
       mix_vibe: "Mood Booster",
       live_tag: "Live",
-      neural_discovery: "Neural Discovery",
-      neural_recalibrating: "Recalibrating Neural Grids...",
-      neural_sync: "Synchronized with your sonic profile",
-      neural_sync_request: "Neural Sync Request",
-      signal_center: "Signal Center",
+      neural_discovery: "Recommended for You",
+      neural_recalibrating: "Refreshing recommendations...",
+      neural_sync: "Up to date with your listening",
+      neural_sync_request: "Feedback request",
+      signal_center: "Notifications",
+      notifications_title: "Notifications",
+      notifications_clear: "Clear All",
+      notifications_empty: "No notifications yet",
+      update_available: "Update available",
+      update_download: "Open release",
+      update_failed: "Update check failed",
+      connection_offline: "You're offline",
+      connection_online: "Back online",
+      rpc_ready: "Discord RPC connected",
+      rpc_disabled: "Discord RPC disabled",
+      rpc_error: "Discord RPC error",
+      rpc_reconnecting: "Discord RPC reconnecting",
+      sync_paused: "Sync paused until connection returns.",
+      sync_failed: "SoundCloud sync failed",
+      sync_success: "SoundCloud synced",
+      queue: "Queue",
+      queue_empty: "Queue is empty",
+      queue_hint: "Add tracks from playlists or mixes.",
       yes: "Yes",
       no: "No",
-      neural_wave_initiated: "Neural Wave Initiated",
-      neural_link_sync: "Neural Link Sync",
-      neural_blur: "Neural Blur Amount",
-      neural_failure: "Aether encountered a critical neural link failure. The system core has been stabilized.",
+      neural_wave_initiated: "Mix started",
+      neural_link_sync: "Syncing",
+      neural_blur: "Blur Amount",
+      neural_failure: "Aether hit an error and recovered.",
       settings_ui: "UI Appearance",
       settings_language: "Language",
       settings_general: "General Settings",
@@ -118,8 +177,8 @@ export const UserDataProvider = ({ children }) => {
       playlist_desc: "Organize your sonic discoveries into local collections.",
       playlist_recs: "Recommended Additions",
       playlist_analyzing: "Analyzing sonic patterns...",
-      awaiting_input: "Awaiting Sonic Input",
-      profile_stats: "Neural Statistics",
+      awaiting_input: "Pick a track to start",
+      profile_stats: "Listening Stats",
       profile_bio: "Sonic Bio",
       profile_joined: "Joined Aether",
       back: "Back",
@@ -158,10 +217,10 @@ export const UserDataProvider = ({ children }) => {
       profile: "Профиль",
       connected: "Подключено",
       local: "Локальный",
-      search_placeholder: "Поиск в Aether...",
-      neural_vibe: "Нейронная волна",
-      neural_vibe_desc: "Настройте слайдер нейронной волны, чтобы откалибровать систему рекомендаций под вашу частоту.",
-      neural_feature: "Нейронная функция",
+      search_placeholder: "Поиск музыки...",
+      neural_vibe: "Волна настроения",
+      neural_vibe_desc: "Подстройте слайдер, чтобы сформировать радио под настроение.",
+      neural_feature: "Контроль настроения",
       sensitivity: "Чувствительность",
       vibe_deep: "Глубокая",
       vibe_chill: "Спокойная",
@@ -171,22 +230,42 @@ export const UserDataProvider = ({ children }) => {
       ignite_wave: "Запустить волну",
       live_now: "В эфире",
       on_air: "Ожидание",
-      daily_mixes: "Умные миксы дня",
+      daily_mixes: "Миксы дня",
       daily_collection: "Дневная подборка",
       mix_remix: "Ремикс дня",
       mix_discovery: "Звуковое открытие",
       mix_focus: "Глубокий фокус",
       mix_energy: "Заряд энергии",
       mix_vibe: "Настроение",
-      neural_sync: "Синхронизировано с вашим профилем",
-      neural_sync_request: "Запрос нейронной синхронизации",
-      signal_center: "Центр сигналов",
+      neural_discovery: "Рекомендации для вас",
+      neural_recalibrating: "Обновляем рекомендации...",
+      neural_sync: "Актуально по вашим прослушиваниям",
+      neural_sync_request: "Запрос обратной связи",
+      signal_center: "Уведомления",
+      notifications_title: "Уведомления",
+      notifications_clear: "Очистить все",
+      notifications_empty: "Пока нет уведомлений",
+      update_available: "Доступно обновление",
+      update_download: "Открыть релиз",
+      update_failed: "Ошибка проверки обновлений",
+      connection_offline: "Нет подключения к интернету",
+      connection_online: "Подключение восстановлено",
+      rpc_ready: "Discord RPC подключен",
+      rpc_disabled: "Discord RPC выключен",
+      rpc_error: "Ошибка Discord RPC",
+      rpc_reconnecting: "Переподключение Discord RPC",
+      sync_paused: "Синхронизация приостановлена до восстановления связи.",
+      sync_failed: "Синхронизация SoundCloud не удалась",
+      sync_success: "SoundCloud синхронизирован",
+      queue: "Очередь",
+      queue_empty: "Очередь пуста",
+      queue_hint: "Добавляйте треки из плейлистов и миксов.",
       yes: "Да",
       no: "Нет",
-      neural_wave_initiated: "Нейронная волна запущена",
-      neural_link_sync: "Синхронизация нейросвязи",
-      neural_blur: "Интенсивность нейронного размытия",
-      neural_failure: "Критический сбой нейронной связи. Ядро системы стабилизировано.",
+      neural_wave_initiated: "Микс запущен",
+      neural_link_sync: "Синхронизация",
+      neural_blur: "Интенсивность размытия",
+      neural_failure: "Произошла ошибка. Приложение восстановлено.",
       settings_ui: "Внешний вид",
       settings_language: "Язык интерфейса",
       settings_general: "Общие настройки",
@@ -205,8 +284,8 @@ export const UserDataProvider = ({ children }) => {
       playlist_desc: "Организуйте свои звуковые открытия в локальные коллекции.",
       playlist_recs: "Рекомендуем добавить",
       playlist_analyzing: "Анализ звуковых паттернов...",
-      awaiting_input: "Ожидание звукового сигнала",
-      profile_stats: "Нейронная статистика",
+      awaiting_input: "Выберите трек, чтобы начать",
+      profile_stats: "Статистика прослушиваний",
       profile_bio: "Био",
       profile_joined: "В системе Aether с",
       back: "Назад",
@@ -244,22 +323,26 @@ export const UserDataProvider = ({ children }) => {
 
   useEffect(() => {
     const init = async () => {
-      const [liked, hist, playlists, vSets, aSets, auSets, tCache, dMixes, dMixesTime] = await Promise.all([
+      const [liked, hist, playlists, vSets, aSets, auSets, tCache, dMixes, dMixesTime, storedNotifications] = await Promise.all([
         get('likedSongs'), get('history'), get('localPlaylists'),
         get('visualSettings'), get('appSettings'), get('audioSettings'), get('trendingCache'),
-        get('dailyMixes'), get('dailyMixesTimestamp')
+        get('dailyMixes'), get('dailyMixesTimestamp'), get('notifications')
       ]);
 
       if (liked) setLikedSongs(liked);
       if (hist) setHistory(hist);
       if (playlists) setLocalPlaylists(playlists);
       if (vSets) setVisualSettings(vSets);
+      if (storedNotifications) setNotifications(storedNotifications);
 
       const resolvedAppSettings = aSets || appSettings;
       if (aSets) {
         setAppSettings(aSets);
       } else {
         set('appSettings', resolvedAppSettings);
+      }
+      if (typeof resolvedAppSettings.persistCache !== 'undefined') {
+        localStorage.setItem('persist_cache', resolvedAppSettings.persistCache ? 'true' : 'false');
       }
       if (window.electron) window.electron.send('update-app-settings', resolvedAppSettings);
 
@@ -268,16 +351,92 @@ export const UserDataProvider = ({ children }) => {
       if (dMixes) setDailyMixes(dMixes);
       if (dMixesTime) setDailyMixesTimestamp(dMixesTime);
       
+      refreshCacheStats();
       syncSoundCloud();
     };
     init();
   }, []);
 
   const updateVisualSettings = (s) => { setVisualSettings(p => { const u = {...p, ...s}; set('visualSettings', u); return u; }); };
-  const updateAppSettings = (s) => { setAppSettings(p => { const u = {...p, ...s}; set('appSettings', u); if (window.electron) window.electron.send('update-app-settings', u); return u; }); };
+  const updateAppSettings = (s) => {
+    const shouldClearCache = s && s.persistCache === false;
+    setAppSettings(p => {
+      const u = { ...p, ...s };
+      set('appSettings', u);
+      if (typeof u.persistCache !== 'undefined') {
+        localStorage.setItem('persist_cache', u.persistCache ? 'true' : 'false');
+      }
+      if (window.electron) window.electron.send('update-app-settings', u);
+      return u;
+    });
+    if (shouldClearCache) {
+      clearOfflineCache().then(refreshCacheStats);
+    }
+  };
   const updateAudioSettings = (s) => { setAudioSettings(p => { const u = {...p, ...s}; set('audioSettings', u); return u; }); };
 
-  const clearCache = async () => { await del('trendingCache'); setTrendingCache(null); };
+  const clearCache = async () => {
+    await del('trendingCache');
+    setTrendingCache(null);
+    await clearOfflineCache();
+    refreshCacheStats();
+  };
+
+  const clearAppData = async () => {
+    const defaultVisualSettings = {
+      glassOpacity: 85,
+      sidebarOpacity: 40,
+      blurAmount: 40,
+      accentColor: '#6366f1',
+      animations: true
+    };
+    const defaultAppSettings = {
+      closeToTray: true,
+      showTrayIcon: true,
+      autoStart: false,
+      persistCache: true,
+      language: 'en',
+      discordRPC: true
+    };
+    const defaultAudioSettings = {
+      enabled: true,
+      eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      bassBoost: 0,
+      clarity: 0,
+      compressor: true
+    };
+
+    const keysToClear = [
+      'likedSongs', 'history', 'localPlaylists', 'visualSettings', 'appSettings', 'audioSettings',
+      'trendingCache', 'dailyMixes', 'dailyMixesTimestamp', 'notifications'
+    ];
+    await Promise.all(keysToClear.map((k) => del(k)));
+    await clearOfflineCache();
+
+    setLikedSongs([]);
+    setHistory([]);
+    setLocalPlaylists([]);
+    setUserProfile(null);
+    setUserPlaylists([]);
+    setTrendingCache(null);
+    setDailyMixes(null);
+    setDailyMixesTimestamp(null);
+    setHomeRecommendations([]);
+    setNotifications([]);
+    setAudioSettings(defaultAudioSettings);
+    setVisualSettings(defaultVisualSettings);
+    setAppSettings(defaultAppSettings);
+    set('visualSettings', defaultVisualSettings);
+    set('appSettings', defaultAppSettings);
+    set('audioSettings', defaultAudioSettings);
+    if (window.electron) window.electron.send('update-app-settings', defaultAppSettings);
+
+    localStorage.removeItem('sc_oauth_token');
+    localStorage.removeItem('sc_client_id');
+    localStorage.removeItem('player_volume');
+    localStorage.setItem('persist_cache', defaultAppSettings.persistCache ? 'true' : 'false');
+    refreshCacheStats();
+  };
 
   const updateDailyMixes = (mixes) => {
     setDailyMixes(mixes);
@@ -292,16 +451,33 @@ export const UserDataProvider = ({ children }) => {
   const syncSoundCloud = async () => {
     setIsSyncing(true);
     try {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        addNotification({
+          type: 'connection',
+          level: 'warning',
+          title: t.connection_offline,
+          body: t.sync_paused,
+          key: 'connection-status'
+        });
+        setIsSyncing(false);
+        return;
+      }
       const profile = await fetchUserProfile();
       if (profile) {
         setUserProfile(profile);
         const [likes, playlists] = await Promise.all([fetchUserLikes(), fetchUserPlaylists()]);
         if (Array.isArray(likes) && likes.length > 0) setLikedSongs(likes);
         if (Array.isArray(playlists)) setUserPlaylists(playlists);
-        showToast(t.auth_sync + " Complete");
+        showToast(t.sync_success);
       }
     } catch (e) {
       console.warn('SoundCloud sync failed:', e);
+      addNotification({
+        type: 'connection',
+        level: 'error',
+        title: t.sync_failed,
+        body: e?.message || 'SoundCloud request failed.'
+      });
     } finally {
       setIsSyncing(false);
     }
@@ -360,12 +536,15 @@ export const UserDataProvider = ({ children }) => {
   return (
     <UserDataContext.Provider value={{
       likedSongs, history, localPlaylists, userProfile, userPlaylists,
-      visualSettings, appSettings, audioSettings, trendingCache, neuralFeedback, t,
+      visualSettings, appSettings, audioSettings, trendingCache, t,
       dailyMixes, dailyMixesTimestamp, updateDailyMixes, logout,
       homeRecommendations, setHomeRecommendations,
+      notifications, addNotification, markNotificationsRead, clearNotifications,
+      cacheStats, refreshCacheStats,
       isSyncing, syncSoundCloud, toasts, showToast,
       updateVisualSettings, updateAppSettings, updateAudioSettings, setTrendingCache,
-      createPlaylist, addToPlaylist, removeFromPlaylist, deletePlaylist, toggleLike, isLiked, addToHistory, clearCache
+      createPlaylist, addToPlaylist, removeFromPlaylist, deletePlaylist, toggleLike, isLiked, addToHistory,
+      clearCache, clearAppData
     }}>
       {children}
     </UserDataContext.Provider>

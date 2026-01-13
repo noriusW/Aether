@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Pause, Brain, RefreshCcw } from 'lucide-react';
+import { Play, Pause, Compass, RefreshCcw } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import { useUserData } from '../context/UserDataContext';
 import { generateRecommendations } from '../services/recommendationService';
@@ -11,7 +11,7 @@ const Home = () => {
   
   const [loading, setLoading] = useState(false);
   
-  const loadNeuralDiscovery = async (force = false) => {
+  const loadRecommendations = async (force = false) => {
     if (loading) return;
     // Skip if we already have recommendations and it's not a force refresh
     if (!force && homeRecommendations && homeRecommendations.length > 0) return;
@@ -21,13 +21,13 @@ const Home = () => {
       const tracks = await generateRecommendations(likedSongs);
       setHomeRecommendations(tracks);
     } catch (e) {
-      console.error("Neural Discovery Failed", e);
+      console.error("Recommendations failed", e);
     }
     setLoading(false);
   };
 
   useEffect(() => {
-    loadNeuralDiscovery();
+    loadRecommendations();
   }, []);
 
   const handlePlay = (track, e) => {
@@ -48,8 +48,8 @@ const Home = () => {
         <div>
           <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
             <div className="relative">
-               <Brain size={24} className="text-indigo-400" />
-               {loading && <div className="absolute inset-0 text-indigo-400 animate-ping"><Brain size={24} /></div>}
+               <Compass size={24} className="text-indigo-400" />
+               {loading && <div className="absolute inset-0 text-indigo-400 animate-ping"><Compass size={24} /></div>}
             </div>
             {t.neural_discovery}
           </h2>
@@ -59,7 +59,7 @@ const Home = () => {
         </div>
         
         <button 
-          onClick={() => loadNeuralDiscovery(true)}
+          onClick={() => loadRecommendations(true)}
           className="p-2 rounded-xl bg-white/5 border border-white/5 text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all group"
           title="Force Refresh"
         >

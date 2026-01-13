@@ -43,7 +43,7 @@ const Radio = () => {
         playTrack(tracks[0]);
       }
     } catch (error) {
-      console.error("Failed to generate Mood Wave:", error);
+      console.error("Failed to generate mix:", error);
     }
     setLoading(false);
   };

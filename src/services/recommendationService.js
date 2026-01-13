@@ -11,10 +11,13 @@ const shuffle = (array) => {
   return array;
 };
 
+const dedupeById = (items) => Array.from(new Map(items.filter(Boolean).map((t) => [t.id, t])).values());
+const normalizeGenre = (genre) => (genre || '').toString().trim().toLowerCase();
+
 // Извлекаем топ жанров пользователя
 const getTopGenres = (likedSongs) => {
   const genres = likedSongs
-    .map(t => t.genre)
+    .map(t => normalizeGenre(t.genre))
     .filter(Boolean)
     .reduce((acc, g) => { acc[g] = (acc[g] || 0) + 1; return acc; }, {});
   
@@ -26,26 +29,30 @@ const getTopGenres = (likedSongs) => {
 
 export const generateRecommendations = async (likedSongs) => {
   if (!likedSongs || likedSongs.length < 2) {
-    return await searchTracks('electronic synthwave 2025');
+    return await searchTracks('electronic mix');
   }
 
-  console.log(`[Neural Engine] Initializing Deep Discovery...`);
+  console.log('[Recommendation Engine] Building personalized picks...');
 
-  // Берем последние 5 лайков как семена
-  const seeds = likedSongs.slice(0, 5);
+  const seeds = shuffle([...likedSongs]).slice(0, 5);
   const relatedPools = await Promise.all(seeds.map(s => fetchRelatedTracks(s.id)));
-  let combined = relatedPools.flat();
+  const combined = relatedPools.flat().filter(Boolean);
 
-  // Убираем дубликаты
-  const unique = Array.from(new Map(combined.map(t => [t.id, t])).values());
-  // Убираем то, что уже лайкнуто
+  const unique = dedupeById(combined);
   const filtered = unique.filter(t => !likedSongs.some(ls => ls.id === t.id));
+
+  if (filtered.length < 10) {
+    const topGenres = getTopGenres(likedSongs);
+    const fallbackQuery = `${topGenres[0] || 'electronic'} mix`;
+    const fallback = await searchTracks(fallbackQuery);
+    return shuffle(dedupeById([...filtered, ...fallback])).slice(0, 40);
+  }
 
   return shuffle(filtered).slice(0, 40);
 };
 
 export const generateMoodWave = async (vibeValue, likedSongs = []) => {
-  console.log(`[Neural Engine] Calibrating Mood Wave: ${vibeValue}%`);
+  console.log(`[Recommendation Engine] Building mood mix: ${vibeValue}%`);
   
   // 1. Собираем пул кандидатов на основе лайков (если есть)
   let candidatePool = [];
@@ -66,12 +73,13 @@ export const generateMoodWave = async (vibeValue, likedSongs = []) => {
   // 3. Если пуль пуст (нет лайков), делаем обычный поиск
   if (candidatePool.length < 10) {
     const topGenres = getTopGenres(likedSongs);
-    const query = `${moodKeywords[0]} ${topGenres.join(' ')}`;
-    return shuffle(await searchTracks(query));
+    const baseGenre = topGenres[0] || 'electronic';
+    const query = `${moodKeywords[0]} ${baseGenre}`.trim();
+    return shuffle(await searchTracks(query)).slice(0, 40);
   }
 
   // 4. Фильтруем пул по ключевым словам настроения (умное сопоставление)
-  const scoredPool = candidatePool.map(track => {
+  const scoredPool = dedupeById(candidatePool).map(track => {
     let score = 0;
     const text = `${track.title} ${track.genre || ''} ${track.artist}`.toLowerCase();
     moodKeywords.forEach(word => {
@@ -85,13 +93,15 @@ export const generateMoodWave = async (vibeValue, likedSongs = []) => {
     .sort((a, b) => b.score - a.score)
     .map(item => item.track);
 
+  const withoutLikes = finalTracks.filter(t => !likedSongs.some(ls => ls.id === t.id));
+
   // 5. Если после фильтрации мало треков, добавляем результаты поиска
-  if (finalTracks.length < 10) {
+  if (withoutLikes.length < 10) {
     const searchFallback = await searchTracks(moodKeywords.join(' '));
-    return shuffle([...finalTracks, ...searchFallback]);
+    return shuffle(dedupeById([...withoutLikes, ...searchFallback])).slice(0, 40);
   }
 
-  return finalTracks.slice(0, 40);
+  return withoutLikes.slice(0, 40);
 };
 
 export const generateDailyMixes = async (likedSongs) => {
@@ -124,11 +134,11 @@ export const generateDailyMixes = async (likedSongs) => {
     const related = await fetchRelatedTracks(seed.id);
     
     // Добавляем немного треков того же жанра для стабильности
-    const genreTracks = await searchTracks(`${seed.genre || topGenres[0]} mix`);
+    const baseGenre = normalizeGenre(seed.genre) || topGenres[0] || 'electronic';
+    const genreTracks = await searchTracks(`${baseGenre} mix`);
     
-    const combined = shuffle([...related, ...genreTracks.slice(0, 10)]);
-    const unique = Array.from(new Map(combined.map(t => [t.id, t])).values())
-      .filter(t => !likedSongs.some(ls => ls.id === t.id));
+    const combined = dedupeById([...related, ...genreTracks.slice(0, 10)]);
+    const unique = combined.filter(t => !likedSongs.some(ls => ls.id === t.id));
 
     return {
       ...config,
@@ -140,16 +150,23 @@ export const generateDailyMixes = async (likedSongs) => {
 
 export const generateTrackRadio = async (track) => {
   const related = await fetchRelatedTracks(track.id);
-  return shuffle(related);
+  if (related.length > 0) return shuffle(related);
+  const fallback = await searchTracks(`${track.title || ''} ${track.artist || ''}`.trim());
+  return shuffle(fallback);
 };
 
 export const generateArtistRadio = async (artistName) => {
   const results = await searchTracks(`${artistName} radio mix`);
-  return shuffle(results);
+  if (results.length > 0) return shuffle(results);
+  return shuffle(await searchTracks(artistName));
 };
 
 export const generatePlaylistRadio = async (playlist) => {
   const seeds = shuffle([...(playlist.tracks || [])]).slice(0, 3);
+  if (seeds.length === 0) {
+    const fallbackQuery = `${playlist.title || 'playlist'} mix`;
+    return shuffle(await searchTracks(fallbackQuery));
+  }
   const results = await Promise.all(seeds.map(t => fetchRelatedTracks(t.id)));
-  return shuffle(results.flat());
+  return shuffle(dedupeById(results.flat()));
 };

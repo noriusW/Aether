@@ -56,7 +56,7 @@ class ErrorBoundary extends React.Component {
 
             <h1 className="text-3xl font-black uppercase tracking-tighter mb-4">Signal Interrupted</h1>
             <p className="text-white/40 mb-8 max-w-md leading-relaxed text-sm">
-              Aether encountered a critical neural link failure. The system core has been stabilized to prevent data loss.
+              Aether hit an unexpected error. The app is in a safe state to protect your data.
             </p>
 
             <div className="w-full bg-black/60 border border-white/5 rounded-2xl p-6 mb-10 text-left overflow-hidden">

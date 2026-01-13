@@ -1,19 +1,28 @@
-# Aether // Neural Audio Interface
+# Aether // Modern SoundCloud Player
 
 ![Aether Icon](icon.png)
 
-A next-generation music player exploring the boundaries of neural audio interfaces and modern aesthetics. Built with Electron and React, Aether provides a seamless, high-performance bridge to SoundCloud's vast library.
+A desktop music player for SoundCloud focused on fast discovery, clean UI, and reliable playback.
 
-## ✨ Features
+## Features
 
-- **💠 Glassmorphism UI:** A stunning, distraction-free interface with real-time blur, AMOLED-friendly themes, and fluid Framer Motion animations.
-- **🧠 Neural Wave Recommendations:** Advanced discovery engine that generates infinite radio mixes based on your sonic preferences.
-- **🛰️ Custom Discord IPC:** Hand-crafted Discord Rich Presence integration for stable, low-overhead activity sharing. ( temporarily not working, will be fixed in future updates )
-- **🔍 Smart Search:** Natural language processing for finding music based on mood, genre, and era.
-- **📁 Local Collections:** Create and manage your own playlists with AI-powered track suggestions.
-- **🎛️ Dynamic Audio Engine:** Built-in visualizers and 10-band equalizer support for the perfect listening experience.
+- Glassmorphism UI with adjustable blur and opacity.
+- Smart mixes built from your likes with solid fallbacks.
+- Custom Discord Rich Presence integration.
+- Intent-aware search for mood, genre, era, and artist hints.
+- Local collections and playlists.
+- Smart offline cache for metadata and results.
+- Dynamic audio engine with visualizer and 10-band EQ.
 
-## 🚀 Getting Started
+## How the algorithms work
+
+- Smart Search: extracts mood, genre, era, and artist hints, removes filler words, then builds a compact SoundCloud query.
+- Recommendations: uses recent likes as seeds, pulls related tracks, removes duplicates/likes, and fills gaps with genre-based search.
+- Mood Mix: selects keyword sets from the vibe slider, scores tracks by keyword hits, and backfills if the pool is small.
+- Daily Mixes: builds themed mixes from related tracks plus a genre-based fallback, deduped and filtered.
+- Offline Cache: stores search/related/artist/playlist metadata with TTL and LRU pruning, and serves cached data when offline.
+
+## Getting Started
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v18 or higher)
@@ -21,30 +30,30 @@ A next-generation music player exploring the boundaries of neural audio interfac
 
 ### Installation
 
-1. **Clone the repository:**
+1. Clone the repository:
    ```bash
-   git clone https://github.com/norius/aether.git
-   cd aether
+   git clone https://github.com/noriusW/Aether.git
+   cd Aether
    ```
 
-2. **Install dependencies:**
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-3. **Run in development mode:**
+3. Run in development mode:
    ```bash
    npm run electron
    ```
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-- **Frontend:** React 19, Vite, Tailwind CSS 4, Framer Motion
-- **Desktop:** Electron 39
-- **State & Data:** Context API, IDB-Keyval (IndexedDB)
-- **API:** SoundCloud v2 Integration
+- Frontend: React 19, Vite, Tailwind CSS 4, Framer Motion
+- Desktop: Electron 39
+- State & Data: Context API, IDB-Keyval (IndexedDB)
+- API: SoundCloud v2 Integration
 
-## 📦 Deployment
+## Deployment
 
 To build a production-ready installer:
 
@@ -54,9 +63,9 @@ npm run build:electron
 
 The output will be available in the `dist_electron` directory.
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
-Created with 💜 by [norius](https://norius.ru)
+Created by [norius](https://norius.ru)

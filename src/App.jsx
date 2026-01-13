@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Home, Library, Radio, Clock, Heart, Play, SkipBack, SkipForward, Volume2, VolumeX, Mic2, Disc, LayoutGrid, Music2, User, Pause, Settings as SettingsIcon, Loader2, Sparkles, MoreHorizontal, ListMusic, AlignLeft, Bell, Download, Shuffle, Repeat, X, Check } from 'lucide-react';
+import { Search, Home, Library, Radio, Clock, Heart, Play, SkipBack, SkipForward, Volume2, VolumeX, Disc, LayoutGrid, User, Pause, Settings as SettingsIcon, Loader2, Sparkles, ListMusic, AlignLeft, Bell, Shuffle, Repeat, Check } from 'lucide-react';
 import TitleBar from './components/TitleBar';
 import Loader from './components/Loader';
 import HomeView from './views/Home';
@@ -13,6 +13,7 @@ import ProfileView from './views/Profile';
 import PlaylistDetail from './views/PlaylistDetail';
 import ArtistProfile from './views/ArtistProfile';
 import PlaylistsView from './views/PlaylistsView';
+import QueueView from './views/Queue';
 import ContextMenu from './components/ContextMenu';
 import NotificationCenter from './components/NotificationCenter';
 import AudioVisualizer from './components/AudioVisualizer';
@@ -21,11 +22,12 @@ import ResizeBorders from './components/ResizeBorders';
 import { PlayerProvider, usePlayer } from './context/PlayerContext';
 import { UserDataProvider, useUserData } from './context/UserDataContext';
 import { processAetherQuery } from './utils/smartSearch';
+import { setUserCredentials } from './services/soundcloud';
 import { checkUpdates } from './services/updateService';
 import { generateTrackRadio, generateArtistRadio, generatePlaylistRadio } from './services/recommendationService';
 
 const MainApp = () => {
-  const { userProfile, syncSoundCloud, visualSettings, localPlaylists, addToPlaylist, toggleLike, appSettings, t, toasts, showToast, removeFromPlaylist } = useUserData();
+  const { userProfile, syncSoundCloud, visualSettings, localPlaylists, addToPlaylist, toggleLike, appSettings, t, toasts, showToast, removeFromPlaylist, notifications, addNotification, markNotificationsRead } = useUserData();
   const { playTrack, togglePlay, currentTrack, setQueue } = usePlayer(); 
   const [appState, setAppState] = useState('BOOT');
   const [activeTab, setActiveTab] = useState('HOME');
@@ -43,7 +45,6 @@ const MainApp = () => {
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [selectedArtist, setSelectedArtist] = useState(null);
   const [showLyrics, setShowLyrics] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [menu, setMenu] = useState(null); 
   const [showManualInput, setShowManualInput] = useState(false);
@@ -60,10 +61,94 @@ const MainApp = () => {
   }, [userProfile]);
 
   useEffect(() => {
-    if (appState === 'DASHBOARD') {
-      checkUpdates().then(info => { if (info.available) setUpdateInfo(info); });
-    }
-  }, [appState]);
+    if (appState !== 'DASHBOARD') return;
+    let cancelled = false;
+    checkUpdates().then(info => {
+      if (cancelled) return;
+      if (info.available) {
+        addNotification({
+          type: 'update',
+          level: 'info',
+          title: `${t.update_available} v${info.version}`,
+          body: info.summary || '',
+          notes: info.notes,
+          url: info.url,
+          key: `update-${info.version}`
+        });
+      } else if (info.error) {
+        addNotification({
+          type: 'update',
+          level: 'warning',
+          title: t.update_failed,
+          body: info.error,
+          key: 'update-error'
+        });
+      }
+    });
+    return () => { cancelled = true; };
+  }, [appState, addNotification]);
+
+  useEffect(() => {
+    const handleOffline = () => addNotification({
+      type: 'connection',
+      level: 'warning',
+      title: t.connection_offline,
+      body: t.sync_paused,
+      key: 'connection-status'
+    });
+    const handleOnline = () => addNotification({
+      type: 'connection',
+      level: 'success',
+      title: t.connection_online,
+      key: 'connection-status'
+    });
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) handleOffline();
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [addNotification]);
+
+  useEffect(() => {
+    if (!window.electron) return;
+    const rpcTitles = {
+      ready: t.rpc_ready,
+      error: t.rpc_error,
+      disabled: t.rpc_disabled,
+      reconnecting: t.rpc_reconnecting,
+      stopped: t.rpc_disabled
+    };
+    const rpcLevels = {
+      ready: 'success',
+      reconnecting: 'warning',
+      error: 'error',
+      disabled: 'warning',
+      stopped: 'info'
+    };
+
+    const handler = (payload) => {
+      if (!payload) return;
+      const code = payload.code || 'ready';
+      const title = payload.title || rpcTitles[code] || 'RPC';
+      const level = payload.level || rpcLevels[code] || 'info';
+      const key = payload.key || ((code === 'ready' || code === 'disabled' || code === 'stopped') ? 'rpc-status' : undefined);
+      addNotification({
+        type: 'rpc',
+        level,
+        title,
+        body: payload.message,
+        key
+      });
+    };
+
+    window.electron.off('rpc-status');
+    window.electron.on('rpc-status', handler);
+    return () => window.electron.off('rpc-status');
+  }, [addNotification]);
 
   useEffect(() => {
     const closeAll = () => { setMenu(null); setShowNotifications(false); };
@@ -92,7 +177,7 @@ const MainApp = () => {
        showToast(t.ctx_queue);
     }
     if (action === 'radio') {
-       showToast('Neural Wave Initiated');
+       showToast(t.neural_wave_initiated);
        const tracks = await generateTrackRadio(item);
        setQueue(tracks); playTrack(tracks[0]);
     }
@@ -108,12 +193,12 @@ const MainApp = () => {
        if (tracks.length) { setQueue(tracks); playTrack(tracks[0]); }
     }
     if (action === 'playlist_radio') {
-       showToast('Neural Wave Initiated');
+       showToast(t.neural_wave_initiated);
        const tracks = await generatePlaylistRadio(item);
        setQueue(tracks); playTrack(tracks[0]);
     }
     if (action === 'artist_radio') {
-       showToast('Neural Wave Initiated');
+       showToast(t.neural_wave_initiated);
        const tracks = await generateArtistRadio(item.title || item.artist);
        setQueue(tracks); playTrack(tracks[0]);
     }
@@ -150,6 +235,7 @@ const MainApp = () => {
   const isSmall = appState === 'BOOT';
   const SIDEBAR_COLLAPSE_WIDTH = 960;
   const isCompactSidebar = windowWidth <= SIDEBAR_COLLAPSE_WIDTH;
+  const hasUnread = notifications.some((n) => !n.read);
 
   return (
     <div className="flex items-center justify-center w-screen h-screen overflow-hidden bg-transparent">
@@ -175,7 +261,7 @@ const MainApp = () => {
         <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none">
            <AnimatePresence>{toasts.map(t => (<motion.div key={t.id} initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9 }} className="bg-indigo-600 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10 backdrop-blur-md font-bold text-xs uppercase tracking-widest"><Check size={14} />{t.message}</motion.div>))}</AnimatePresence>
         </div>
-        <AnimatePresence>{appState === 'BOOT' && (<motion.div key="loader" initial={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col items-center justify-center z-50 bg-black"><Loader /><p className="mt-6 text-[9px] font-bold tracking-[0.4em] text-white/20 animate-pulse uppercase">Neural Link Sync</p></motion.div>)}</AnimatePresence>
+        <AnimatePresence>{appState === 'BOOT' && (<motion.div key="loader" initial={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col items-center justify-center z-50 bg-black"><Loader /><p className="mt-6 text-[9px] font-bold tracking-[0.4em] text-white/20 animate-pulse uppercase">{t.neural_link_sync}</p></motion.div>)}</AnimatePresence>
         <AnimatePresence>{appState === 'AUTH' && !userProfile && (
             <motion.div key="auth" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.1 }} transition={{ duration: 0.8 }} className="absolute inset-0 flex items-center justify-center z-50 bg-black/60 backdrop-blur-sm">
                <div className="relative w-[420px] p-10 bg-[#050505]/95 rounded-[32px] flex flex-col items-center border border-white/5 shadow-2xl overflow-hidden">
@@ -287,8 +373,19 @@ const MainApp = () => {
                         </div>
                       </div>
                       <div className="relative">
-                        <button onClick={(e) => { e.stopPropagation(); setShowNotifications(!showNotifications); }} className={`p-3 rounded-2xl border border-white/5 bg-black/40 transition-all hover:scale-105 cursor-pointer ${showNotifications || updateInfo ? 'text-indigo-400 border-indigo-500/20 shadow-lg' : 'text-white/20'}`}><Bell size={18} />{updateInfo && <div className="absolute top-2.5 right-2.5 w-2 h-2 bg-indigo-500 rounded-full animate-ping"></div>}</button>
-                        <AnimatePresence>{showNotifications && <NotificationCenter updateInfo={updateInfo} onClose={() => setShowNotifications(false)} />}</AnimatePresence>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = !showNotifications;
+                            setShowNotifications(next);
+                            if (next) markNotificationsRead();
+                          }}
+                          className={`p-3 rounded-2xl border border-white/5 bg-black/40 transition-all hover:scale-105 cursor-pointer ${showNotifications || hasUnread ? 'text-indigo-400 border-indigo-500/20 shadow-lg' : 'text-white/20'}`}
+                        >
+                          <Bell size={18} />
+                          {hasUnread && <div className="absolute top-2.5 right-2.5 w-2 h-2 bg-indigo-500 rounded-full animate-ping"></div>}
+                        </button>
+                        <AnimatePresence>{showNotifications && <NotificationCenter onClose={() => setShowNotifications(false)} />}</AnimatePresence>
                       </div>
                    </div>
                    <div className="flex-1 h-full title-bar-drag mx-4"></div>
@@ -306,13 +403,19 @@ const MainApp = () => {
                         {activeTab === 'LIKED' && <LibraryView />}
                         {activeTab === 'PLAYLISTS' && <PlaylistsView onOpenPlaylist={setSelectedPlaylist} />}
                         {activeTab === 'HISTORY' && <HistoryView />}
+                        {activeTab === 'QUEUE' && <QueueView />}
                         {activeTab === 'SETTINGS' && <SettingsView />}
                         {activeTab === 'PROFILE' && <ProfileView />}
                       </>}
                     </motion.div>
                   </AnimatePresence>
                 </div>
-                <PlayerBar onOpenArtist={setSelectedArtist} onToggleLyrics={() => setShowLyrics(!showLyrics)} isLyricsOpen={showLyrics} />
+                <PlayerBar
+                  onOpenArtist={setSelectedArtist}
+                  onOpenQueue={() => { setActiveTab('QUEUE'); setSelectedPlaylist(null); setSelectedArtist(null); }}
+                  onToggleLyrics={() => setShowLyrics(!showLyrics)}
+                  isLyricsOpen={showLyrics}
+                />
                 <AnimatePresence>{showLyrics && currentTrack && <LyricsOverlay track={currentTrack} onClose={() => setShowLyrics(false)} />}</AnimatePresence>
                 {menu && <ContextMenu x={menu.x} y={menu.y} track={menu.track} onClose={() => setMenu(null)} onAction={handleMenuAction} playlists={localPlaylists} />}
               </main>
@@ -323,7 +426,7 @@ const MainApp = () => {
   );
 };
 
-const PlayerBar = ({ onOpenArtist, onToggleLyrics, isLyricsOpen }) => {
+const PlayerBar = ({ onOpenArtist, onOpenQueue, onToggleLyrics, isLyricsOpen }) => {
   const { currentTrack, isPlaying, isLoadingStream, togglePlay, handleNext, handlePrev, volume, setVolume, isMuted, toggleMute, isShuffle, setIsShuffle, repeatMode, setRepeatMode, progress, duration, seek, audioRef, analyserRef } = usePlayer();
   const { toggleLike, isLiked, t } = useUserData();
   
@@ -351,7 +454,16 @@ const PlayerBar = ({ onOpenArtist, onToggleLyrics, isLyricsOpen }) => {
           >
              <div className="flex items-center gap-4 w-[30%]">
                 <div className={`w-12 h-12 rounded-full border border-white/10 relative overflow-hidden shrink-0 bg-black ${isPlaying ? 'animate-[spin_8s_linear_infinite]' : ''} group-hover:scale-105 transition-transform`}><img src={currentTrack.artwork || `https://ui-avatars.com/api/?name=${currentTrack.title}&background=random&color=fff&size=200`} className="absolute inset-0 w-full h-full object-cover opacity-60" /><div className="absolute inset-auto bg-black rounded-full w-2 h-2 z-10 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 shadow-inner"></div></div>
-                <div className="flex flex-col min-w-0"><span className="text-sm font-bold text-white truncate group-hover:text-indigo-300 transition-colors">{currentTrack.title}</span><button onClick={(e) => { e.stopPropagation(); if (currentTrack.artistId) onOpenArtist(currentTrack.artistId); }} className="text-[10px] text-left text-white/40 truncate uppercase tracking-tight font-medium hover:text-indigo-400 hover:underline transition-all cursor-pointer w-fit">{currentTrack.artist}</button></div>
+                <div className="flex flex-col min-w-0">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); if (onOpenQueue) onOpenQueue(); }}
+                    className="text-sm font-bold text-white truncate text-left group-hover:text-indigo-300 transition-colors"
+                    title={t.queue || 'Queue'}
+                  >
+                    {currentTrack.title}
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); if (currentTrack.artistId) onOpenArtist(currentTrack.artistId); }} className="text-[10px] text-left text-white/40 truncate uppercase tracking-tight font-medium hover:text-indigo-400 hover:underline transition-all cursor-pointer w-fit">{currentTrack.artist}</button>
+                </div>
                 <button onClick={() => toggleLike(currentTrack)} className={`ml-2 p-1.5 rounded-full hover:bg-white/10 transition-colors ${isLiked(currentTrack.id) ? 'text-indigo-400' : 'text-white/20'}`}><Heart size={16} fill={isLiked(currentTrack.id) ? "currentColor" : "none"} /></button>
              </div>
              <div className="flex flex-col items-center w-[40%] gap-2 px-4">

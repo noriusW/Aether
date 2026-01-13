@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Key, Globe, Cpu, RefreshCw, Sliders, Palette, Wind, Trash2, Search, Music, Activity, AlertCircle } from 'lucide-react';
 import { setUserCredentials } from '../services/soundcloud';
@@ -18,7 +18,7 @@ const Settings = () => {
     visualSettings, updateVisualSettings, 
     appSettings, updateAppSettings, 
     audioSettings, updateAudioSettings, 
-    userProfile, syncSoundCloud, clearCache, clearAppData, t, showToast
+    userProfile, syncSoundCloud, clearCache, clearAppData, cacheStats, refreshCacheStats, t, showToast
   } = useUserData();
 
   const [localSection, setLocalSection] = useState('AUDIO'); 
@@ -26,6 +26,10 @@ const Settings = () => {
   const [clientId, setClientId] = useState('a281614d7f34dc30b665dfcaa3ed7505');
   const [userToken, setUserToken] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    refreshCacheStats();
+  }, [refreshCacheStats]);
 
   const handleSystemUpdate = (setting) => {
     updateAppSettings(setting);
@@ -66,6 +70,8 @@ const Settings = () => {
     const matchedIds = searchMap.filter(m => m.keywords.some(k => k.includes(lowQuery))).map(m => m.id);
     return menuItems.filter(item => matchedIds.includes(item.id));
   }, [filterText]);
+
+  const cacheSizeLabel = `${(cacheStats.bytes / (1024 * 1024)).toFixed(1)} MB • ${cacheStats.items} items`;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden px-12 pt-8 pb-32">
@@ -213,8 +219,9 @@ const Settings = () => {
                        </div>
                     </SettingsSection>
                     <SettingsSection title="Memory & Cache">
-                       <ToggleControl label="Persist Trending Data" active={appSettings.persistCache} onToggle={() => updateAppSettings({ persistCache: !appSettings.persistCache })} />
-                       <button onClick={clearCache} className="w-full py-3 bg-white/5 rounded-xl text-xs font-bold text-white/40 hover:bg-red-500/10 hover:text-red-400 transition-all">Clear Metadata Cache</button>
+                       <ToggleControl label="Smart offline cache" active={appSettings.persistCache} onToggle={() => updateAppSettings({ persistCache: !appSettings.persistCache })} />
+                       <p className="text-[10px] text-white/30 px-1">{cacheSizeLabel}</p>
+                       <button onClick={clearCache} className="w-full py-3 bg-white/5 rounded-xl text-xs font-bold text-white/40 hover:bg-red-500/10 hover:text-red-400 transition-all">Clear Offline Cache</button>
                        <button onClick={clearAppData} className="w-full py-3 bg-red-500/5 border border-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl hover:bg-red-500 hover:text-white transition-all">Hard Reset Application</button>
                     </SettingsSection>
                   </div>
