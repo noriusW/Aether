@@ -8,7 +8,7 @@ A next-generation music player exploring the boundaries of neural audio interfac
 
 - **💠 Glassmorphism UI:** A stunning, distraction-free interface with real-time blur, AMOLED-friendly themes, and fluid Framer Motion animations.
 - **🧠 Neural Wave Recommendations:** Advanced discovery engine that generates infinite radio mixes based on your sonic preferences.
-- **🛰️ Custom Discord IPC:** Hand-crafted Discord Rich Presence integration for stable, low-overhead activity sharing.
+- **🛰️ Custom Discord IPC:** Hand-crafted Discord Rich Presence integration for stable, low-overhead activity sharing. ( temporarily not working, will be fixed in future updates )
 - **🔍 Smart Search:** Natural language processing for finding music based on mood, genre, and era.
 - **📁 Local Collections:** Create and manage your own playlists with AI-powered track suggestions.
 - **🎛️ Dynamic Audio Engine:** Built-in visualizers and 10-band equalizer support for the perfect listening experience.
