@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+:root {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color: #e5e5e5;
+  background-color: transparent;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: transparent !important;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+/* Резервируем небольшую область по краям для захвата изменения размера в некоторых случаях */
+.resize-border-fix {
+  padding: 1px; 
+}
+
+/* Sidebar/Panels - Base styles only */
+.glass-panel-dark {
+  border-right: 1px solid rgba(255, 255, 255, 0.03);
+  contain: strict; /* Оптимизация отрисовки */
+}
+
+.glass-surface {
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 0 1px rgba(0,0,0,1), 0 20px 50px rgba(0,0,0,0.8);
+  will-change: transform, opacity;
+}
+
+/* Glowing Border Utility */
+.glow-border {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.1); 
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glow-border:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
+}
+
+/* --- Optimized Deep Space Animation --- */
+.amoled-bg-anim {
+  position: absolute;
+  top: 0; left: 0; width: 200%; height: 200%;
+  background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 0%, #000000 100%),
+              radial-gradient(circle at 20% 20%, rgba(76, 29, 149, 0.15) 0%, transparent 40%),
+              radial-gradient(circle at 80% 80%, rgba(56, 189, 248, 0.1) 0%, transparent 40%);
+  animation: drift 25s linear infinite alternate;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform;
+  transform: translateZ(0); /* Включаем 3D-ускорение */
+}
+
+@keyframes drift {
+  0% { transform: translate3d(-5%, -5%, 0) scale(1); }
+  100% { transform: translate3d(0%, 0%, 0) scale(1.05); }
+}
+
+.noise-overlay {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 1;
+  mix-blend-mode: overlay;
+}
+
+.title-bar-drag { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
+.app-region-no-drag { -webkit-app-region: no-drag; }
+
+::-webkit-scrollbar { width: 0px; }
