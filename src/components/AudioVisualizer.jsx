@@ -1,8 +1,17 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { useTheme } from '../context/ThemeContext';
 
 const AudioVisualizer = ({ isPlaying, analyserRef }) => {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
+  const { theme } = useTheme();
+  const colors = useMemo(() => {
+    const vars = theme?.variables || {};
+    return {
+      accent: vars['--accent'] || '#6366f1',
+      accentAlt: vars['--accent-muted'] || '#a5b4fc'
+    };
+  }, [theme]);
 
   useEffect(() => {
     const renderFrame = () => {
@@ -29,24 +38,19 @@ const AudioVisualizer = ({ isPlaying, analyserRef }) => {
 
         ctx.clearRect(0, 0, width, height);
 
-        // Draw Bars
         for (let i = 0; i < bufferLength; i++) {
           barHeight = (dataArray[i] / 255) * height;
 
-          // Gradient
           const gradient = ctx.createLinearGradient(0, height, 0, height - barHeight);
-          gradient.addColorStop(0, '#6366f1'); // Indigo
-          gradient.addColorStop(1, '#a855f7'); // Purple
+          gradient.addColorStop(0, colors.accent);
+          gradient.addColorStop(1, colors.accentAlt);
 
           ctx.fillStyle = gradient;
-          
-          // Rounded tops via simple rect for now, could be improved
           ctx.fillRect(x, height - barHeight, barWidth, barHeight);
 
           x += barWidth + 1;
         }
       } catch (e) {
-        // Silent fail to avoid crashing app
       }
 
       animationRef.current = requestAnimationFrame(renderFrame);

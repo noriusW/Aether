@@ -1,8 +1,40 @@
 @import "tailwindcss";
 
 :root {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  color: #e5e5e5;
+  --accent: #6366f1;
+  --accent-rgb: 99, 102, 241;
+  --accent-strong: #4f46e5;
+  --accent-strong-rgb: 79, 70, 229;
+  --accent-muted: #a5b4fc;
+  --accent-soft: rgba(99, 102, 241, 0.2);
+  --accent-glow: rgba(99, 102, 241, 0.35);
+  --surface: #050505;
+  --surface-2: #0a0a0a;
+  --surface-3: #111111;
+  --surface-rgb: 5, 5, 5;
+  --surface-2-rgb: 10, 10, 10;
+  --surface-3-rgb: 17, 17, 17;
+  --text-primary: #f5f5f5;
+  --text-secondary: rgba(255, 255, 255, 0.75);
+  --text-muted: rgba(255, 255, 255, 0.45);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --shadow-soft: rgba(0, 0, 0, 0.7);
+  --palette-1: #6366f1;
+  --palette-2: #22d3ee;
+  --palette-3: #14b8a6;
+  --palette-4: #a855f7;
+  --palette-5: #f97316;
+  --palette-1-rgb: 99, 102, 241;
+  --palette-2-rgb: 34, 211, 238;
+  --palette-3-rgb: 20, 184, 166;
+  --palette-4-rgb: 168, 85, 247;
+  --palette-5-rgb: 249, 115, 22;
+  --font-body: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+
+  font-family: var(--font-body);
+  color: var(--text-primary);
   background-color: transparent;
 }
 
@@ -29,28 +61,28 @@ html, body, #root {
 
 .glass-surface {
   border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 0 0 1px rgba(0,0,0,1), 0 20px 50px rgba(0,0,0,0.8);
+  box-shadow: 0 0 0 1px rgba(0,0,0,1), 0 20px 50px var(--shadow-soft);
   will-change: transform, opacity;
 }
 
 /* Glowing Border Utility */
 .glow-border {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 15px rgba(99, 102, 241, 0.1); 
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 0 15px var(--accent-soft);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .glow-border:hover {
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
+  border-color: rgba(var(--accent-rgb), 0.4);
+  box-shadow: 0 0 20px var(--accent-soft);
 }
 
 /* --- Optimized Deep Space Animation --- */
 .amoled-bg-anim {
   position: absolute;
   top: 0; left: 0; width: 200%; height: 200%;
-  background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 0%, #000000 100%),
-              radial-gradient(circle at 20% 20%, rgba(76, 29, 149, 0.15) 0%, transparent 40%),
-              radial-gradient(circle at 80% 80%, rgba(56, 189, 248, 0.1) 0%, transparent 40%);
+  background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 0%, var(--surface) 100%),
+              radial-gradient(circle at 20% 20%, rgba(var(--palette-1-rgb), 0.18) 0%, transparent 40%),
+              radial-gradient(circle at 80% 80%, rgba(var(--palette-2-rgb), 0.12) 0%, transparent 40%);
   animation: drift 25s linear infinite alternate;
   pointer-events: none;
   z-index: 0;
@@ -72,6 +104,42 @@ html, body, #root {
   z-index: 1;
   mix-blend-mode: overlay;
 }
+
+.theme-select {
+  background-color: rgba(var(--surface-2-rgb), 0.7);
+  color: var(--text-secondary);
+}
+.theme-select option {
+  background-color: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.text-indigo-300 { color: var(--accent-muted) !important; }
+.text-indigo-400 { color: var(--accent) !important; }
+.text-indigo-500 { color: var(--accent-strong) !important; }
+.text-indigo-500\/40 { color: rgba(var(--accent-rgb), 0.4) !important; }
+
+.text-white\/20 { color: rgba(255, 255, 255, 0.45) !important; }
+.text-white\/30 { color: rgba(255, 255, 255, 0.6) !important; }
+.text-white\/40 { color: rgba(255, 255, 255, 0.7) !important; }
+.text-white\/50 { color: rgba(255, 255, 255, 0.8) !important; }
+
+.bg-indigo-500 { background-color: var(--accent) !important; }
+.bg-indigo-600 { background-color: var(--accent-strong) !important; }
+.bg-indigo-500\/10 { background-color: rgba(var(--accent-rgb), 0.1) !important; }
+.bg-indigo-500\/20 { background-color: rgba(var(--accent-rgb), 0.2) !important; }
+.bg-indigo-500\/30 { background-color: rgba(var(--accent-rgb), 0.3) !important; }
+.bg-indigo-500\/40 { background-color: rgba(var(--accent-rgb), 0.4) !important; }
+.bg-indigo-500\/50 { background-color: rgba(var(--accent-rgb), 0.5) !important; }
+.bg-indigo-600\/10 { background-color: rgba(var(--accent-strong-rgb), 0.1) !important; }
+.bg-indigo-600\/20 { background-color: rgba(var(--accent-strong-rgb), 0.2) !important; }
+
+.border-indigo-500\/20 { border-color: rgba(var(--accent-rgb), 0.2) !important; }
+.border-indigo-500\/30 { border-color: rgba(var(--accent-rgb), 0.3) !important; }
+.border-indigo-500\/50 { border-color: rgba(var(--accent-rgb), 0.5) !important; }
+
+.shadow-indigo-500\/10 { box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.1) !important; }
+.shadow-indigo-500\/20 { box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.2) !important; }
 
 .title-bar-drag { -webkit-app-region: drag; }
 .no-drag { -webkit-app-region: no-drag; }

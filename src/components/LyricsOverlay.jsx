@@ -33,7 +33,7 @@ const LyricsOverlay = ({ track, onClose }) => {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
-      className="absolute inset-0 z-[60] flex items-center justify-center p-8 bg-black/60 backdrop-blur-xl cursor-default"
+      className="absolute inset-0 z-[60] flex items-center justify-center p-8 bg-black/60 cursor-default"
     >
       <motion.div 
         initial={{ scale: 0.9, y: 20 }}

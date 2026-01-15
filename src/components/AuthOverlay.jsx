@@ -7,7 +7,6 @@ const AuthOverlay = ({ onLogin, visible }) => {
 
   const handleConnect = () => {
     setLoading(true);
-    // Simulate OAuth delay
     setTimeout(() => {
       onLogin();
     }, 2000);
@@ -28,7 +27,7 @@ const AuthOverlay = ({ onLogin, visible }) => {
           {/* Icon */}
           <div className="mb-6 relative">
             <div className="absolute inset-0 bg-indigo-500 blur-2xl opacity-40"></div>
-            <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transform rotate-3">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg transform rotate-3" style={{ background: `linear-gradient(135deg, var(--accent), var(--palette-4))` }}>
               <Disc className="text-white w-8 h-8 animate-[spin_10s_linear_infinite]" />
             </div>
           </div>
@@ -59,8 +58,8 @@ const AuthOverlay = ({ onLogin, visible }) => {
             <Twitter className="w-5 h-5 hover:text-white cursor-pointer transition-colors" />
           </div>
 
-          <div className="mt-6 text-xs text-white/30 font-medium">
-             v1.1.0 <span className="mx-2">-</span> Release
+          <div className="mt-6 text-xs text-white/40 font-medium">
+             v1.2 beta <span className="mx-2">-</span> Release
           </div>
         </div>
       </div>

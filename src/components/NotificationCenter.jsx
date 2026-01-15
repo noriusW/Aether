@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Bell, Download, CheckCircle, X, AlertTriangle, PlugZap, WifiOff, Info } from 'lucide-react';
 import { useUserData } from '../context/UserDataContext';
+import { openExternal } from '../utils/external';
 
 const NotificationCenter = ({ onClose }) => {
   const { notifications, clearNotifications, t } = useUserData();
@@ -36,7 +37,8 @@ const NotificationCenter = ({ onClose }) => {
       initial={{ opacity: 0, y: 10, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-      className="absolute top-16 left-0 w-[360px] bg-[#050505] border border-white/10 rounded-[28px] shadow-[0_20px_80px_rgba(0,0,0,0.8)] z-[100] overflow-hidden flex flex-col backdrop-blur-3xl cursor-default"
+      className="absolute top-16 left-0 w-[360px] border border-white/10 rounded-[28px] shadow-[0_20px_80px_rgba(0,0,0,0.8)] z-[100] overflow-hidden flex flex-col cursor-default"
+      style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.96)' }}
       onClick={(e) => e.stopPropagation()}
     >
       <div className="px-5 py-4 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
@@ -92,15 +94,26 @@ const NotificationCenter = ({ onClose }) => {
                       {preview}
                     </p>
                   )}
-                  {item.url && (
+                  {typeof item.progress === 'number' && (
+                    <div className="mt-3 w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className="h-full bg-indigo-500 transition-all duration-300"
+                        style={{ width: `${Math.max(0, Math.min(100, item.progress))}%` }}
+                      />
+                    </div>
+                  )}
+                  {(item.url || item.action) && (
                     <button
                       onClick={() => {
-                        if (window.electron?.invoke) window.electron.invoke('open-external', item.url);
-                        else window.open(item.url, '_blank');
+                        if (item.action === 'install-update') {
+                          window.electron?.invoke?.('install-update');
+                          return;
+                        }
+                        if (item.url) openExternal(item.url);
                       }}
                       className="mt-3 w-full py-2 bg-white/10 text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:bg-white hover:text-black transition-all"
                     >
-                      {t.update_download || 'Open release'}
+                      {item.ctaLabel || t.update_download || 'Open release'}
                     </button>
                   )}
                 </div>

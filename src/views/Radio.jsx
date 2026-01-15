@@ -1,20 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Play, Pause, Radio as RadioIcon, Sparkles, Zap, Moon, Sun, Coffee, Disc, RefreshCw, ArrowLeft, Clock } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import { useUserData } from '../context/UserDataContext';
 import { searchTracks, getStreamUrl } from '../services/soundcloud';
 import { generateMoodWave, generateDailyMixes } from '../services/recommendationService';
+import { AnimatedPlayIcon, TrackRow } from '../components/PremiumUI';
 import Loader from '../components/Loader';
 
 const Radio = () => {
-  const { playTrack, setQueue, currentTrack, isPlaying, togglePlay } = usePlayer();
-  const { t, likedSongs, dailyMixes, dailyMixesTimestamp, updateDailyMixes } = useUserData();
+  const { playTrack, setQueue, currentTrack, isPlaying, togglePlay, playbackContext } = usePlayer();
+  const { t, likedSongs, dislikedSongs, dailyMixes, dailyMixesTimestamp, updateDailyMixes, algorithmSettings } = useUserData();
   const [loading, setLoading] = useState(false);
   const [vibe, setVibe] = useState(50);
   const [selectedMix, setSelectedMix] = useState(null);
 
-  const loadMixes = async (force = false) => {
-    // If not forced, check if we have valid mixes (less than 24h old)
+  const loadMixes = useCallback(async (force = false) => {
     if (!force && dailyMixes && dailyMixesTimestamp) {
       const hoursSinceUpdate = (Date.now() - dailyMixesTimestamp) / (1000 * 60 * 60);
       if (hoursSinceUpdate < 24) return;
@@ -28,19 +28,19 @@ const Radio = () => {
       console.error("Failed to load daily mixes", e);
     }
     setLoading(false);
-  };
+  }, [likedSongs, dailyMixes, dailyMixesTimestamp, updateDailyMixes]);
 
   useEffect(() => {
     loadMixes();
-  }, []);
+  }, [loadMixes]);
 
   const handleMoodWave = async () => {
     setLoading(true);
     try {
-      const tracks = await generateMoodWave(vibe, likedSongs);
+      const tracks = await generateMoodWave(vibe, likedSongs, algorithmSettings, dislikedSongs);
       if (tracks.length > 0) {
         setQueue(tracks);
-        playTrack(tracks[0]);
+        playTrack(tracks[0], { id: 'mood-wave', type: 'radio-wave' });
       }
     } catch (error) {
       console.error("Failed to generate mix:", error);
@@ -74,13 +74,17 @@ const Radio = () => {
     return keys[mix.id] || mix.title;
   };
 
-  const handlePlayMix = (e, mix) => {
+  const handlePlayMix = useCallback((e, mix) => {
     e.stopPropagation();
-    if (mix.tracks.length > 0) {
+    const isThisMixActive = playbackContext?.id === mix.id && playbackContext?.type === 'radio-mix';
+    
+    if (isThisMixActive) {
+       togglePlay();
+    } else if (mix.tracks.length > 0) {
       setQueue(mix.tracks);
-      playTrack(mix.tracks[0]);
+      playTrack(mix.tracks[0], { id: mix.id, type: 'radio-mix' });
     }
-  };
+  }, [playbackContext, togglePlay, setQueue, playTrack]);
 
   const formatDuration = (ms) => {
     const min = Math.floor(ms / 60000);
@@ -89,6 +93,8 @@ const Radio = () => {
   };
 
   if (selectedMix) {
+    const isMixPlaying = playbackContext?.id === selectedMix.id && playbackContext?.type === 'radio-mix';
+
     return (
       <div className="flex-1 overflow-y-auto px-8 pb-32 animate-in fade-in duration-500">
         <button 
@@ -113,7 +119,7 @@ const Radio = () => {
                   onClick={(e) => handlePlayMix(e, selectedMix)}
                   className="w-20 h-20 rounded-full bg-white text-black flex items-center justify-center shadow-2xl scale-90 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-500"
                 >
-                  <Play fill="black" size={32} className="ml-1" />
+                  <AnimatedPlayIcon isPlaying={isMixPlaying && isPlaying} size={32} color="black" />
                 </button>
              </div>
           </div>
@@ -126,7 +132,7 @@ const Radio = () => {
                  onClick={(e) => handlePlayMix(e, selectedMix)}
                  className="px-8 py-3 bg-white text-black font-black uppercase tracking-widest rounded-2xl hover:scale-105 transition-all shadow-xl flex items-center gap-3"
                >
-                 <Play fill="black" size={18} />
+                 <AnimatedPlayIcon isPlaying={isMixPlaying && isPlaying} size={18} color="black" />
                  {t.play_all}
                </button>
                <span className="text-white/20 text-xs font-mono">{selectedMix.tracks.length} Tracks / {t.neural_discovery}</span>
@@ -135,26 +141,16 @@ const Radio = () => {
         </div>
 
         <div className="space-y-1">
-          {selectedMix.tracks.map((track, i) => {
-            const isActive = currentTrack?.id === track.id;
-            return (
-              <div 
+          {selectedMix.tracks.map((track, i) => (
+             <TrackRow 
                 key={track.id}
-                onClick={() => { setQueue(selectedMix.tracks); playTrack(track); }}
-                className={`group flex items-center gap-4 p-3 rounded-2xl hover:bg-white/5 transition-all cursor-pointer ${isActive ? 'bg-white/10' : ''}`}
-              >
-                <span className="w-8 text-center text-xs font-mono text-white/10 group-hover:text-indigo-400 transition-colors">
-                  {isActive && isPlaying ? <div className="flex items-end justify-center gap-0.5 h-3"><div className="w-0.5 h-full bg-indigo-400 animate-bounce"></div><div className="w-0.5 h-2/3 bg-indigo-400 animate-bounce [animation-delay:0.2s]"></div><div className="w-0.5 h-full bg-indigo-400 animate-bounce [animation-delay:0.4s]"></div></div> : (i + 1).toString().padStart(2, '0')}
-                </span>
-                <img src={track.artwork} className="w-10 h-10 rounded-lg object-cover shadow-md" alt="" />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-bold truncate ${isActive ? 'text-indigo-400' : 'text-white'}`}>{track.title}</p>
-                  <p className="text-[10px] text-white/30 font-black uppercase tracking-tighter truncate">{track.artist}</p>
-                </div>
-                <span className="text-xs font-mono text-white/20">{formatDuration(track.duration)}</span>
-              </div>
-            );
-          })}
+                index={i}
+                track={track}
+                active={currentTrack?.id === track.id}
+                playing={isPlaying}
+                onClick={() => { setQueue(selectedMix.tracks); playTrack(track, { id: selectedMix.id, type: 'radio-mix' }); }}
+             />
+          ))}
         </div>
       </div>
     );
@@ -223,7 +219,7 @@ const Radio = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         {(dailyMixes || []).map((mix) => {
-           const isMixActive = mix.tracks.some(tr => tr.id === currentTrack?.id);
+           const isMixActive = playbackContext?.id === mix.id && playbackContext?.type === 'radio-mix';
            const isMixPlaying = isMixActive && isPlaying;
 
            return (
@@ -242,9 +238,9 @@ const Radio = () => {
                <div className="absolute inset-0 p-6 flex flex-col justify-end relative z-10">
                   <div 
                     onClick={(e) => handlePlayMix(e, mix)}
-                    className={`absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center transition-transform shadow-lg ${isMixActive ? 'scale-110 bg-white text-black' : 'group-hover:scale-110 text-white'}`}
+                    className={`absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center transition-transform shadow-lg ${isMixActive ? 'scale-110 bg-white text-black' : 'group-hover:scale-110 text-white'}`}
                   >
-                    {isMixPlaying ? <Pause fill="currentColor" size={16} /> : <Play fill="currentColor" size={16} className="ml-0.5" />}
+                    <AnimatedPlayIcon isPlaying={isMixPlaying} size={16} color={isMixActive ? "black" : "currentColor"} />
                   </div>
                   
                   <h3 className={`text-xl font-bold mb-1 tracking-tight leading-tight ${isMixActive ? 'text-indigo-300' : 'text-white'}`}>{getMixTitle(mix)}</h3>

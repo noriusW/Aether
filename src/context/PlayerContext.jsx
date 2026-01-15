@@ -8,7 +8,7 @@ export const usePlayer = () => useContext(PlayerContext);
 const EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
 export const PlayerProvider = ({ children }) => {
-  const { addToHistory, audioSettings } = useUserData();
+  const { addToHistory, audioSettings, algorithmSettings } = useUserData();
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(() => parseFloat(localStorage.getItem('player_volume')) || 0.5);
@@ -19,17 +19,21 @@ export const PlayerProvider = ({ children }) => {
   const [isLoadingStream, setIsLoadingStream] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState('OFF');
+  const [playbackContext, setPlaybackContext] = useState(null);
 
   const audioRef = useRef(new Audio());
+  const nextAudioRef = useRef(new Audio());
   const audioContextRef = useRef(null);
   const sourceRef = useRef(null);
-  const filtersRef = useRef([]); // EQ
+  const filtersRef = useRef([]);
   const bassFilterRef = useRef(null);
   const compressorRef = useRef(null);
   const analyserRef = useRef(null);
+  const preloadedUrlRef = useRef(null);
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.crossOrigin = "anonymous";
+    if (nextAudioRef.current) nextAudioRef.current.crossOrigin = "anonymous";
   }, []);
 
   useEffect(() => {
@@ -45,7 +49,6 @@ export const PlayerProvider = ({ children }) => {
     };
   }, []);
 
-  // --- AUDIO ENGINE INITIALIZATION ---
   const initAudioEngine = () => {
     if (audioContextRef.current) return;
 
@@ -55,7 +58,6 @@ export const PlayerProvider = ({ children }) => {
     const source = ctx.createMediaElementSource(audioRef.current);
     sourceRef.current = source;
 
-    // 1. Create 10-band EQ
     const filters = EQ_FREQUENCIES.map((freq, i) => {
       const filter = ctx.createBiquadFilter();
       filter.type = 'peaking';
@@ -66,14 +68,12 @@ export const PlayerProvider = ({ children }) => {
     });
     filtersRef.current = filters;
 
-    // 2. Bass Boost Node
     const bass = ctx.createBiquadFilter();
     bass.type = 'lowshelf';
     bass.frequency.value = 150;
     bass.gain.value = audioSettings.bassBoost;
     bassFilterRef.current = bass;
 
-    // 3. Dynamics Compressor (Normalize volume)
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.setValueAtTime(-24, ctx.currentTime);
     comp.knee.setValueAtTime(30, ctx.currentTime);
@@ -82,13 +82,10 @@ export const PlayerProvider = ({ children }) => {
     comp.release.setValueAtTime(0.25, ctx.currentTime);
     compressorRef.current = comp;
 
-    // 4. Analyser for visualizer
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
     analyserRef.current = analyser;
 
-    // 5. CONNECT THE CHAIN
-    // Source -> EQ[0] -> EQ[1] -> ... -> Bass -> Compressor -> Analyser -> Output
     let lastNode = source;
     filters.forEach(f => { lastNode.connect(f); lastNode = f; });
     lastNode.connect(bass);
@@ -97,21 +94,17 @@ export const PlayerProvider = ({ children }) => {
     analyser.connect(ctx.destination);
   };
 
-  // Sync EQ & Effects when settings change
   useEffect(() => {
     if (!audioContextRef.current) return;
     
-    // Sync EQ
     filtersRef.current.forEach((filter, i) => {
       filter.gain.setTargetAtTime(audioSettings.eq[i], audioContextRef.current.currentTime, 0.01);
     });
 
-    // Sync Bass Boost
     if (bassFilterRef.current) {
       bassFilterRef.current.gain.setTargetAtTime(audioSettings.bassBoost, audioContextRef.current.currentTime, 0.01);
     }
 
-    // Sync Compressor toggle
     if (compressorRef.current) {
       const ratio = audioSettings.compressor ? 12 : 1;
       compressorRef.current.ratio.setTargetAtTime(ratio, audioContextRef.current.currentTime, 0.01);
@@ -132,15 +125,20 @@ export const PlayerProvider = ({ children }) => {
     const loadTrack = async () => {
       if (currentTrack) {
         setIsLoadingStream(true);
-        // Update Discord RPC
         if (window.electron) window.electron.send('update-presence', currentTrack);
         
         try {
-          const url = await getStreamUrl(currentTrack);
-          audioRef.current.src = url;
+          if (preloadedUrlRef.current && preloadedUrlRef.current.id === currentTrack.id) {
+             audioRef.current.src = preloadedUrlRef.current.url;
+          } else {
+             const url = await getStreamUrl(currentTrack);
+             audioRef.current.src = url;
+          }
+          
           audioRef.current.volume = isMuted ? 0 : volume;
           await audioRef.current.play();
           setIsPlaying(true);
+          preloadedUrlRef.current = null;
         } catch (e) {
           console.error(e);
           setIsPlaying(false);
@@ -155,6 +153,31 @@ export const PlayerProvider = ({ children }) => {
     audioRef.current.volume = isMuted ? 0 : volume;
     localStorage.setItem('player_volume', volume.toString());
   }, [volume, isMuted]);
+
+  useEffect(() => {
+    if (!algorithmSettings?.predictiveLoading || !currentTrack || duration < 10) return;
+
+    if (progress > duration * 0.85) {
+       const idx = queue.findIndex(t => t.id === currentTrack.id);
+       let nextTrack = null;
+       
+       if (isShuffle) {
+          // Shuffle logic not fully predictable here without a shuffled queue state, defaulting to next linear
+       } else if (idx < queue.length - 1) {
+          nextTrack = queue[idx + 1];
+       } else if (repeatMode === 'ALL') {
+          nextTrack = queue[0];
+       }
+
+       if (nextTrack && (!preloadedUrlRef.current || preloadedUrlRef.current.id !== nextTrack.id)) {
+          getStreamUrl(nextTrack).then(url => {
+             preloadedUrlRef.current = { id: nextTrack.id, url };
+             nextAudioRef.current.src = url;
+             nextAudioRef.current.load();
+          }).catch(e => console.warn('Preload failed', e));
+       }
+    }
+  }, [progress, duration, currentTrack, queue, algorithmSettings, isShuffle, repeatMode]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -179,7 +202,12 @@ export const PlayerProvider = ({ children }) => {
     };
   }, [repeatMode, queue, currentTrack, isShuffle]);
 
-  const playTrack = (t) => { if (currentTrack?.id === t.id) { togglePlay(); return; } setCurrentTrack(t); addToHistory(t); };
+  const playTrack = (t, context = null) => { 
+    if (currentTrack?.id === t.id) { togglePlay(); return; } 
+    setCurrentTrack(t); 
+    addToHistory(t); 
+    if (context) setPlaybackContext(context);
+  };
   const togglePlay = () => setIsPlaying(p => !p);
   const toggleMute = () => setIsMuted(p => !p);
   const seek = (t) => { audioRef.current.currentTime = t; setProgress(t); };
@@ -198,13 +226,21 @@ export const PlayerProvider = ({ children }) => {
     if (idx > 0) playTrack(queue[idx - 1]);
   };
 
+  const value = React.useMemo(() => ({
+    currentTrack, isPlaying, isLoadingStream, volume, isMuted, isShuffle, repeatMode,
+    progress, duration, queue, audioRef, analyserRef, playbackContext,
+    setQueue, playTrack, togglePlay, setVolume, toggleMute, setIsShuffle, setRepeatMode,
+    handleNext, handlePrev, seek
+  }), [
+    currentTrack, isPlaying, isLoadingStream, volume, isMuted, isShuffle, repeatMode,
+    progress, duration, queue, playbackContext,
+    // Functions
+    setQueue, playTrack, togglePlay, setVolume, toggleMute, setIsShuffle, setRepeatMode,
+    handleNext, handlePrev, seek
+  ]);
+
   return (
-    <PlayerContext.Provider value={{
-      currentTrack, isPlaying, isLoadingStream, volume, isMuted, isShuffle, repeatMode,
-      progress, duration, queue, audioRef, analyserRef,
-      setQueue, playTrack, togglePlay, setVolume, toggleMute, setIsShuffle, setRepeatMode,
-      handleNext, handlePrev, seek
-    }}>
+    <PlayerContext.Provider value={value}>
       {children}
     </PlayerContext.Provider>
   );

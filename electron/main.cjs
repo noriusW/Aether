@@ -1,4 +1,6 @@
-const { app, BrowserWindow, ipcMain, shell, net, screen, Tray, Menu, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, net, screen, Tray, Menu, globalShortcut, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
+const { pathToFileURL } = require('url');
 const path = require('path');
 const { DiscordRPCClient } = require('@ryuziii/discord-rpc');
 
@@ -17,10 +19,14 @@ let presenceHeartbeat = null;
 let rpcShutdownTimer = null;
 let rpcStopping = false;
 const clientId = '1460554881508184074'; 
+const APP_WEBSITE = 'https://norius.ru';
 
 
-const MIN_WINDOW_WIDTH = 960;
-const MIN_WINDOW_HEIGHT = 420;
+const MIN_WINDOW_WIDTH = 340;
+const MIN_WINDOW_HEIGHT = 340;
+const DASHBOARD_MIN_WIDTH = 960;
+const DASHBOARD_MIN_HEIGHT = 420;
+
 const RPC_RETRY_LIMIT = 3;
 const RPC_RETRY_DELAY_MS = 10000;
 const RPC_PRESENCE_DEBOUNCE_MS = 500;
@@ -29,12 +35,28 @@ let appSettings = {
   closeToTray: true,
   showTrayIcon: true,
   autoStart: false,
-  discordRPC: true 
+  discordRPC: true,
+  autoUpdate: true
 };
 
 const sendRpcStatus = (payload) => {
   if (mainWindow && mainWindow.webContents) {
     mainWindow.webContents.send('rpc-status', payload);
+  }
+};
+
+const sendUpdateStatus = (payload) => {
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('update-status', payload);
+  }
+};
+
+const isSafeExternalUrl = (value) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch (e) {
+    return false;
   }
 };
 
@@ -44,8 +66,16 @@ ipcMain.on('maximize-window', () => { if (mainWindow.isMaximized()) mainWindow.r
 ipcMain.on('resize-window', (e, { width, height, center }) => {
   if (width === 'max') {
     const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
-    if (mainWindow) mainWindow.setSize(Math.floor(sw * 0.9), Math.floor(sh * 0.9));
-  } else if (mainWindow) mainWindow.setSize(width, height);
+    if (mainWindow) {
+        mainWindow.setSize(Math.floor(sw * 0.9), Math.floor(sh * 0.9));
+    }
+  } else if (mainWindow) {
+    mainWindow.setSize(width, height);
+  }
+  // Enforce dashboard minimums after expansion
+  if (mainWindow) {
+    mainWindow.setMinimumSize(DASHBOARD_MIN_WIDTH, DASHBOARD_MIN_HEIGHT);
+  }
   if (center && mainWindow) mainWindow.center();
 });
 
@@ -54,20 +84,23 @@ ipcMain.on('resize-window-delta', (e, { dx = 0, dy = 0, direction = '' }) => {
   const bounds = mainWindow.getBounds();
   let { x, y, width, height } = bounds;
 
+  const currentMinW = DASHBOARD_MIN_WIDTH;
+  const currentMinH = DASHBOARD_MIN_HEIGHT;
+
   if (direction.includes('e')) {
-    width = Math.max(MIN_WINDOW_WIDTH, width + dx);
+    width = Math.max(currentMinW, width + dx);
   }
   if (direction.includes('s')) {
-    height = Math.max(MIN_WINDOW_HEIGHT, height + dy);
+    height = Math.max(currentMinH, height + dy);
   }
   if (direction.includes('w')) {
-    const newWidth = Math.max(MIN_WINDOW_WIDTH, width - dx);
+    const newWidth = Math.max(currentMinW, width - dx);
     const appliedDx = width - newWidth;
     x += appliedDx;
     width = newWidth;
   }
   if (direction.includes('n')) {
-    const newHeight = Math.max(MIN_WINDOW_HEIGHT, height - dy);
+    const newHeight = Math.max(currentMinH, height - dy);
     const appliedDy = height - newHeight;
     y += appliedDy;
     height = newHeight;
@@ -78,16 +111,42 @@ ipcMain.on('resize-window-delta', (e, { dx = 0, dy = 0, direction = '' }) => {
   }
 });
 
+ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setIgnoreMouseEvents(ignore, options);
+  }
+});
+
 ipcMain.on('update-presence', (e, track) => {
   lastTrack = track;
   queuePresence(track);
 });
 
 ipcMain.handle('get-soundcloud-key', async () => await fetchSoundCloudKey());
-ipcMain.handle('open-external', async (e, url) => shell.openExternal(url));
+ipcMain.handle('open-external', async (e, url) => {
+  if (!isSafeExternalUrl(url)) {
+    return { ok: false, error: 'Blocked unsafe URL' };
+  }
+  await shell.openExternal(url);
+  return { ok: true };
+});
+ipcMain.handle('select-background-file', async (e, type = 'image') => {
+  const isVideo = type === 'video';
+  const filters = isVideo
+    ? [{ name: 'Video', extensions: ['mp4', 'webm', 'mov', 'm4v'] }]
+    : [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }];
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters
+  });
+  if (result.canceled || !result.filePaths?.length) return null;
+  return pathToFileURL(result.filePaths[0]).toString();
+});
 
 ipcMain.on('update-app-settings', (e, s) => {
   const wasDiscordRPCEnabled = appSettings.discordRPC;
+  const wasAutoUpdateEnabled = appSettings.autoUpdate;
   appSettings = { ...appSettings, ...s };
   createTray();
   
@@ -103,6 +162,11 @@ ipcMain.on('update-app-settings', (e, s) => {
       openAtLogin: appSettings.autoStart,
       path: app.getPath('exe')
     });
+  }
+
+  if (appSettings.autoUpdate && !wasAutoUpdateEnabled) {
+    initAutoUpdater();
+    checkForUpdates();
   }
 });
 
@@ -241,6 +305,79 @@ function stopRPC() {
   rpcErrorCount = 0;
 }
 
+let updateInitialized = false;
+
+const serializeReleaseNotes = (notes) => {
+  if (!notes) return '';
+  if (typeof notes === 'string') return notes;
+  if (Array.isArray(notes)) {
+    return notes.map((entry) => entry?.note || '').filter(Boolean).join('\n');
+  }
+  return '';
+};
+
+const initAutoUpdater = () => {
+  if (!app.isPackaged || updateInitialized) return;
+  updateInitialized = true;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = app.getVersion().includes('-');
+
+  autoUpdater.on('checking-for-update', () => sendUpdateStatus({ code: 'checking' }));
+  autoUpdater.on('update-available', (info) => {
+    sendUpdateStatus({
+      code: 'available',
+      version: info?.version,
+      notes: serializeReleaseNotes(info?.releaseNotes)
+    });
+  });
+  autoUpdater.on('update-not-available', () => sendUpdateStatus({ code: 'not-available' }));
+  autoUpdater.on('download-progress', (progress) => {
+    sendUpdateStatus({
+      code: 'download-progress',
+      percent: Math.round(progress?.percent || 0)
+    });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    sendUpdateStatus({
+      code: 'downloaded',
+      version: info?.version,
+      notes: serializeReleaseNotes(info?.releaseNotes)
+    });
+  });
+  autoUpdater.on('error', (err) => {
+    sendUpdateStatus({
+      code: 'error',
+      message: err?.message || 'Auto-update error'
+    });
+  });
+};
+
+const checkForUpdates = async () => {
+  if (!app.isPackaged) {
+    return { supported: false };
+  }
+  initAutoUpdater();
+  if (!appSettings.autoUpdate) {
+    return { supported: true, disabled: true };
+  }
+  try {
+    await autoUpdater.checkForUpdates();
+    return { supported: true };
+  } catch (err) {
+    sendUpdateStatus({ code: 'error', message: err?.message || 'Auto-update error' });
+    return { supported: true, error: err?.message };
+  }
+};
+
+ipcMain.handle('check-for-updates', async () => checkForUpdates());
+ipcMain.handle('install-update', async () => {
+  if (!app.isPackaged) return { ok: false, error: 'Not supported in dev' };
+  autoUpdater.quitAndInstall();
+  return { ok: true };
+});
+
 function startPresenceHeartbeat() {
   if (presenceHeartbeat) clearInterval(presenceHeartbeat);
   presenceHeartbeat = setInterval(() => {
@@ -274,9 +411,12 @@ async function updatePresence(track) {
 
     if (track) {
       activity.startTimestamp = Math.floor(Date.now() / 1000);
+      const buttons = [];
       if (typeof track.permalink === 'string' && track.permalink.startsWith('http')) {
-        activity.buttons = [{ label: 'Listen on SoundCloud', url: track.permalink }];
+        buttons.push({ label: 'Listen on SoundCloud', url: track.permalink });
       }
+      buttons.push({ label: 'Aether Website', url: APP_WEBSITE });
+      if (buttons.length) activity.buttons = buttons.slice(0, 2);
     }
 
     await rpc.setActivity(activity);
@@ -340,7 +480,7 @@ function registerShortcuts() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: MIN_WINDOW_WIDTH, height: MIN_WINDOW_HEIGHT, minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT,
+    width: 340, height: 340, minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT,
     frame: false, transparent: true, title: 'Aether',
     backgroundColor: '#00000000', resizable: true, 
     icon: path.join(__dirname, '../icon.png'),
@@ -384,6 +524,15 @@ ipcMain.handle('authenticate-soundcloud', async () => {
   });
 });
 
-app.whenReady().then(() => { createWindow(); createTray(); registerShortcuts(); initRPC(); });
+app.whenReady().then(() => {
+  createWindow();
+  createTray();
+  registerShortcuts();
+  initRPC();
+  initAutoUpdater();
+  if (appSettings.autoUpdate) {
+    checkForUpdates();
+  }
+});
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

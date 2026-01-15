@@ -6,7 +6,27 @@ const API_URL = 'https://api-v2.soundcloud.com';
 let activeClientId = localStorage.getItem('sc_client_id') || null;
 let activeUserToken = localStorage.getItem('sc_oauth_token') || null;
 
+const FALLBACK_KEYS = [
+  'a281614d7f34dc30b665dfcaa3ed7505', // Default
+  'TpXyK87YJ8r8r8r8r8r8r8r8r8r8r8r', // Placeholder
+  // Add more known public keys if available
+];
+
 const getAuthHeaders = () => activeUserToken ? { 'Authorization': activeUserToken } : {};
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const fetchWithRetry = async (url, options = {}, retries = 3) => {
+  try {
+    return await axios(url, options);
+  } catch (error) {
+    if (retries > 0 && (!error.response || error.response.status >= 500)) {
+      await sleep(1000 * (4 - retries));
+      return fetchWithRetry(url, options, retries - 1);
+    }
+    throw error;
+  }
+};
 
 const getClientId = async () => {
   if (activeClientId) return activeClientId;
@@ -15,8 +35,10 @@ const getClientId = async () => {
       const key = await window.electron.invoke('get-soundcloud-key');
       if (key) { activeClientId = key; return key; }
     }
-  } catch (e) { console.warn(e); }
-  return 'a281614d7f34dc30b665dfcaa3ed7505';
+  } catch (e) { console.warn('IPC Key Fetch Failed', e); }
+  
+  // Fallback rotation could go here, for now return primary fallback
+  return FALLBACK_KEYS[0];
 };
 
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
@@ -32,9 +54,14 @@ export const setUserCredentials = (clientId, token) => {
   if (token) localStorage.setItem('sc_oauth_token', token);
 };
 
+/**
+ * Fetches user profile for the authenticated user.
+ * @returns {Promise<Object|null>}
+ */
 export const fetchUserProfile = async () => {
   try {
-    const res = await axios.get(`${API_URL}/me`, {
+    const res = await fetchWithRetry(`${API_URL}/me`, {
+      method: 'GET',
       headers: getAuthHeaders(),
       params: { client_id: await getClientId() }
     });
@@ -44,7 +71,8 @@ export const fetchUserProfile = async () => {
 
 export const fetchUserPlaylists = async () => {
   try {
-    const res = await axios.get(`${API_URL}/me/playlists`, {
+    const res = await fetchWithRetry(`${API_URL}/me/playlists`, {
+      method: 'GET',
       headers: getAuthHeaders(),
       params: { client_id: await getClientId(), limit: 50 }
     });
@@ -54,7 +82,8 @@ export const fetchUserPlaylists = async () => {
 
 export const fetchUserLikes = async () => {
   try {
-    const res = await axios.get(`${API_URL}/me/favorites`, {
+    const res = await fetchWithRetry(`${API_URL}/me/favorites`, {
+      method: 'GET',
       headers: getAuthHeaders(),
       params: { client_id: await getClientId(), limit: 50 }
     });
@@ -73,7 +102,8 @@ export const fetchPlaylistById = async (id) => {
   if (cached) return cached;
   try {
     const cid = await getClientId();
-    const res = await axios.get(`${API_URL}/playlists/${id}`, {
+    const res = await fetchWithRetry(`${API_URL}/playlists/${id}`, {
+      method: 'GET',
       params: { client_id: cid }, headers: getAuthHeaders()
     });
     let tracks = res.data.tracks || [];
@@ -102,7 +132,7 @@ export const fetchArtistById = async (id) => {
   const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
   if (cached) return cached;
   try {
-    const res = await axios.get(`${API_URL}/users/${id}`, { params: { client_id: await getClientId() }, headers: getAuthHeaders() });
+    const res = await fetchWithRetry(`${API_URL}/users/${id}`, { method: 'GET', params: { client_id: await getClientId() }, headers: getAuthHeaders() });
     await cacheSet(cacheKey, res.data, { ttlMs: 1000 * 60 * 60 * 12 });
     return res.data;
   } catch (e) {
@@ -116,7 +146,7 @@ export const fetchArtistTracks = async (id) => {
   const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
   if (cached) return cached;
   try {
-    const res = await axios.get(`${API_URL}/users/${id}/tracks`, { params: { client_id: await getClientId(), limit: 50 }, headers: getAuthHeaders() });
+    const res = await fetchWithRetry(`${API_URL}/users/${id}/tracks`, { method: 'GET', params: { client_id: await getClientId(), limit: 50 }, headers: getAuthHeaders() });
     const tracks = (res.data.collection || []).map(formatTrack);
     await cacheSet(cacheKey, tracks, { ttlMs: 1000 * 60 * 30 });
     return tracks;
@@ -131,7 +161,7 @@ export const fetchArtistPlaylists = async (id) => {
   const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
   if (cached) return cached;
   try {
-    const res = await axios.get(`${API_URL}/users/${id}/playlists`, { params: { client_id: await getClientId(), limit: 20 }, headers: getAuthHeaders() });
+    const res = await fetchWithRetry(`${API_URL}/users/${id}/playlists`, { method: 'GET', params: { client_id: await getClientId(), limit: 20 }, headers: getAuthHeaders() });
     const playlists = (res.data.collection || []).map(formatPlaylist);
     await cacheSet(cacheKey, playlists, { ttlMs: 1000 * 60 * 30 });
     return playlists;
@@ -146,7 +176,7 @@ export const fetchRelatedTracks = async (id) => {
   const cached = await cacheGet(cacheKey, { allowStale: isOffline() });
   if (cached) return cached;
   try {
-    const res = await axios.get(`${API_URL}/tracks/${id}/related`, { params: { client_id: await getClientId(), limit: 20 }, headers: getAuthHeaders() });
+    const res = await fetchWithRetry(`${API_URL}/tracks/${id}/related`, { method: 'GET', params: { client_id: await getClientId(), limit: 20 }, headers: getAuthHeaders() });
     const tracks = dedupeById((res.data.collection || []).map(formatTrack));
     await cacheSet(cacheKey, tracks, { ttlMs: 1000 * 60 * 60 * 6 });
     return tracks;
@@ -166,7 +196,7 @@ export const searchTracks = async (query, type = 'tracks') => {
   try {
     const cid = await getClientId();
     const ep = type === 'tracks' ? 'tracks' : type === 'playlists' ? 'playlists' : 'users';
-    const res = await axios.get(`${API_URL}/search/${ep}`, { params: { q: normalized, client_id: cid, limit: 40 }, headers: getAuthHeaders() });
+    const res = await fetchWithRetry(`${API_URL}/search/${ep}`, { method: 'GET', params: { q: normalized, client_id: cid, limit: 40 }, headers: getAuthHeaders() });
     const results = (res.data.collection || []).map(item => {
       if (type === 'tracks') return formatTrack(item);
       if (type === 'playlists') return formatPlaylist(item);
@@ -201,7 +231,7 @@ export const getStreamUrl = async (t) => {
   }
   try {
     if (!t.mediaUrl) return t.streamUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-    const res = await axios.get(t.mediaUrl, { params: { client_id: await getClientId() }, headers: getAuthHeaders() });
+    const res = await fetchWithRetry(t.mediaUrl, { method: 'GET', params: { client_id: await getClientId() }, headers: getAuthHeaders() });
     const url = res.data?.url || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
     if (cacheKey) await cacheSet(cacheKey, url, { ttlMs: 1000 * 60 * 5 });
     return url;
@@ -222,7 +252,10 @@ export const fetchLyrics = async (artist, title) => {
     if (!id) return null;
     const l = await axios.get(`https://music.163.com/api/song/lyric`, { params: { id, lv: -1, kv: -1, tv: -1 } });
     return l.data?.lrc?.lyric?.replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, '').trim();
-  } catch (e) { return null; }
+  } catch (e) { 
+    console.warn("Lyrics fetch failed (likely CORS or network):", e.message);
+    return null; 
+  }
 };
 
 const formatTrack = (t) => ({

@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { AlertTriangle, RefreshCw, Github, Terminal } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Github, Terminal, Copy } from 'lucide-react';
+import { openExternal } from '../utils/external';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -30,19 +31,24 @@ class ErrorBoundary extends React.Component {
     bodyText += "**Stack Trace:**\n```\n" + stack + "\n```";
     
     const body = encodeURIComponent(bodyText);
-    const url = "https://github.com/norius/aether/issues/new?title=App+Crash+Report&body=" + body;
+    const url = "https://github.com/noriusW/Aether/issues/new?title=App+Crash+Report&body=" + body;
     
-    if (window.electron) {
-      window.electron.invoke('open-external', url);
-    } else {
-      window.open(url, '_blank');
-    }
+    openExternal(url);
+  };
+
+  handleCopy = async () => {
+    const errorMsg = this.state.error ? this.state.error.toString() : 'Unknown Error';
+    const stack = this.state.errorInfo ? this.state.errorInfo.componentStack : 'No stack trace';
+    const payload = `Aether Error Report\n\n${errorMsg}\n\n${stack}`;
+    try {
+      await navigator.clipboard.writeText(payload);
+    } catch (e) {}
   };
 
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex items-center justify-center w-screen h-screen bg-[#050505] text-white p-12 overflow-hidden relative">
+        <div className="flex items-center justify-center w-screen h-screen bg-[var(--surface)] text-white p-12 overflow-hidden relative">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-red-950/20 rounded-full blur-[120px] pointer-events-none"></div>
           
           <motion.div 
@@ -55,7 +61,7 @@ class ErrorBoundary extends React.Component {
             </div>
 
             <h1 className="text-3xl font-black uppercase tracking-tighter mb-4">Signal Interrupted</h1>
-            <p className="text-white/40 mb-8 max-w-md leading-relaxed text-sm">
+            <p className="text-white/60 mb-8 max-w-md leading-relaxed text-sm">
               Aether hit an unexpected error. The app is in a safe state to protect your data.
             </p>
 
@@ -71,20 +77,27 @@ class ErrorBoundary extends React.Component {
                </div>
             </div>
 
-            <div className="flex gap-4 w-full">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
                <button 
                  onClick={this.handleReload}
-                 className="flex-1 flex items-center justify-center gap-3 py-4 bg-white text-black font-black uppercase tracking-widest text-xs rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-xl"
+                 className="flex items-center justify-center gap-3 py-4 bg-white text-black font-black uppercase tracking-widest text-xs rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-xl"
                >
                  <RefreshCw size={16} />
                  Reboot System
                </button>
                <button 
                  onClick={this.handleReport}
-                 className="flex-1 flex items-center justify-center gap-3 py-4 bg-white/5 border border-white/5 text-white/60 font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-white/10 hover:text-white transition-all"
+                 className="flex items-center justify-center gap-3 py-4 bg-white/5 border border-white/5 text-white/70 font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-white/10 hover:text-white transition-all"
                >
                  <Github size={16} />
                  Report Bug
+               </button>
+               <button 
+                 onClick={this.handleCopy}
+                 className="flex items-center justify-center gap-3 py-4 bg-white/5 border border-white/5 text-white/70 font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-white/10 hover:text-white transition-all"
+               >
+                 <Copy size={16} />
+                 Copy Log
                </button>
             </div>
           </motion.div>

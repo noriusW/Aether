@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const GITHUB_REPO = "noriusW/Aether";
-const CURRENT_VERSION = "1.1.0";
+const CURRENT_VERSION = "1.2.0-beta";
 const CACHE_KEY = "update_cache";
 const CACHE_TTL_MS = 1000 * 60 * 30;
 

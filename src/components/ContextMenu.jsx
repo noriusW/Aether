@@ -1,49 +1,76 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Radio, Plus, Heart, ChevronRight, ListMusic, Music, User, ListPlus, Trash2 } from 'lucide-react';
+import { Play, Radio, Plus, Heart, ChevronRight, ListMusic, Music, User, ListPlus, Trash2, Ban } from 'lucide-react';
 import { useUserData } from '../context/UserDataContext';
 
-const ContextMenu = ({ x, y, track, onClose, onAction, playlists = [] }) => {
-  const { t, isLiked } = useUserData();
+const ContextMenu = ({ x, y, track, onClose, onAction, playlists = [], containerBounds }) => {
+  const { t, isLiked, isDisliked } = useUserData();
   const [showPlaylists, setShowPlaylists] = useState(false);
   const [adjustedPos, setAdjustedPos] = useState({ x, y });
+  const [submenuSide, setSubmenuSide] = useState('right');
   const menuRef = React.useRef(null);
+  const submenuRef = React.useRef(null);
+
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
   useEffect(() => {
-    if (menuRef.current) {
-      const menuWidth = 240; // w-60 = 15rem = 240px
-      const menuHeight = menuRef.current.offsetHeight;
-      const winWidth = window.innerWidth;
-      const winHeight = window.innerHeight;
+    let raf = 0;
+    const updatePosition = () => {
+      if (!menuRef.current) return;
+      const menuWidth = menuRef.current.offsetWidth || 240;
+      const menuHeight = menuRef.current.offsetHeight || 0;
+      const bounds = containerBounds || { width: window.innerWidth, height: window.innerHeight };
+      const winWidth = bounds.width || window.innerWidth;
+      const winHeight = bounds.height || window.innerHeight;
+      const margin = 8;
 
       let newX = x;
       let newY = y;
 
-      if (x + menuWidth > winWidth) {
-        newX = winWidth - menuWidth - 10;
+      if (newX + menuWidth > winWidth - margin) {
+        newX = winWidth - menuWidth - margin;
       }
-      if (y + menuHeight > winHeight) {
-        newY = winHeight - menuHeight - 10;
+      if (newY + menuHeight > winHeight - margin) {
+        newY = winHeight - menuHeight - margin;
       }
 
+      newX = clamp(newX, margin, Math.max(margin, winWidth - menuWidth - margin));
+      newY = clamp(newY, margin, Math.max(margin, winHeight - menuHeight - margin));
+
       setAdjustedPos({ x: newX, y: newY });
-    }
-  }, [x, y, track]);
+
+      if (submenuRef.current) {
+        const submenuWidth = submenuRef.current.offsetWidth || 192;
+        const spaceRight = winWidth - (newX + menuWidth);
+        const spaceLeft = newX;
+        const needsLeft = spaceRight < submenuWidth + margin && spaceLeft > spaceRight;
+        setSubmenuSide(needsLeft ? 'left' : 'right');
+      }
+    };
+
+    raf = window.requestAnimationFrame(updatePosition);
+    const onResize = () => window.requestAnimationFrame(updatePosition);
+    window.addEventListener('resize', onResize);
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [x, y, track, showPlaylists, playlists.length, containerBounds]);
 
   if (!track) return null;
 
-  // Определяем тип элемента (по умолчанию трек)
   const isArtist = track.type === 'artist';
   const isPlaylist = track.type === 'playlist';
   const isTrack = !isArtist && !isPlaylist;
   const liked = isTrack && isLiked(track.id);
+  const disliked = isTrack && isDisliked && isDisliked(track.id);
 
   return (
     <motion.div 
       ref={menuRef}
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="fixed z-[100] bg-[#0a0a0a]/95 border border-white/10 rounded-2xl shadow-2xl p-1.5 w-60 flex flex-col gap-0.5 backdrop-blur-xl"
+      className="absolute z-[100] bg-[#0a0a0a]/95 border border-white/10 rounded-2xl shadow-2xl p-1.5 w-64 flex flex-col gap-0.5 backdrop-blur-xl"
       style={{ top: adjustedPos.y, left: adjustedPos.x }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -52,13 +79,17 @@ const ContextMenu = ({ x, y, track, onClose, onAction, playlists = [] }) => {
         <span className="truncate">{track.title}</span>
       </div>
       
-      {/* ACTIONS FOR TRACKS */}
       {isTrack && (
         <>
           <MenuItem icon={<Play size={14} />} label={t.ctx_play} onClick={() => onAction('play')} />
           <MenuItem icon={<ListPlus size={14} />} label={t.ctx_queue} onClick={() => onAction('queue')} />
           <MenuItem icon={<Radio size={14} />} label={t.ctx_radio} onClick={() => onAction('radio')} />
+          
+          <div className="h-px bg-white/5 my-1 mx-2"></div>
+          
           <MenuItem icon={<Heart size={14} fill={liked ? "currentColor" : "none"} />} label={liked ? t.ctx_unlike : t.ctx_like} onClick={() => onAction('like')} />
+          <MenuItem icon={<Ban size={14} className={disliked ? "text-red-400" : ""} />} label={disliked ? "Restore" : t.ctx_dislike || "Not Interesting"} onClick={() => onAction('dislike')} />
+          
           <div className="h-px bg-white/5 my-1 mx-2"></div>
           
           {track.playlistId && (
@@ -76,9 +107,10 @@ const ContextMenu = ({ x, y, track, onClose, onAction, playlists = [] }) => {
             <AnimatePresence>
               {showPlaylists && (
                 <motion.div 
-                  initial={{ opacity: 0, x: 10 }}
+                  ref={submenuRef}
+                  initial={{ opacity: 0, x: submenuSide === 'left' ? -10 : 10 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className="absolute left-full top-0 ml-2 bg-[#0a0a0a] border border-white/10 rounded-xl shadow-2xl p-1.5 w-48 flex flex-col gap-0.5 backdrop-blur-xl"
+                  className={`absolute top-0 bg-[#0a0a0a]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl p-1.5 w-48 flex flex-col gap-0.5 ${submenuSide === 'left' ? 'right-full mr-2' : 'left-full ml-2'}`}
                 >
                   {playlists.length > 0 ? playlists.map(p => (
                     <MenuItem key={p.id} icon={<ListMusic size={14} />} label={p.title} onClick={() => onAction('add_playlist', p)} />
@@ -92,7 +124,6 @@ const ContextMenu = ({ x, y, track, onClose, onAction, playlists = [] }) => {
         </>
       )}
 
-      {/* ACTIONS FOR ARTISTS */}
       {isArtist && (
         <>
           <MenuItem icon={<User size={14} />} label={t.ctx_view_profile} onClick={() => onAction('open_artist', track)} />
@@ -100,7 +131,6 @@ const ContextMenu = ({ x, y, track, onClose, onAction, playlists = [] }) => {
         </>
       )}
 
-      {/* ACTIONS FOR PLAYLISTS */}
       {isPlaylist && (
         <>
           <MenuItem icon={<Play size={14} />} label={t.ctx_play_all} onClick={() => onAction('play_playlist', track)} />
@@ -117,7 +147,7 @@ const MenuItem = ({ icon, label, onClick, suffix, active }) => (
     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium text-left group ${active ? 'bg-indigo-600 text-white' : 'text-white/60 hover:bg-white/5 hover:text-white'}`}
   >
     <span className={`${active ? 'text-white' : 'text-indigo-400 group-hover:text-indigo-300'} transition-colors`}>{icon}</span>
-    <span className="flex-1">{label}</span>
+    <span className="flex-1 truncate">{label}</span>
     {suffix && <span className="text-white/20">{suffix}</span>}
   </button>
 );
